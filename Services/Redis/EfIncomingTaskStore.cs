@@ -48,6 +48,7 @@ public sealed class EfIncomingTaskStore(HoloScoopDbContext dbContext) : IIncomin
         {
             RedisStream = redisStream,
             RedisMessageId = redisMessageId,
+            ScheduledMemberName = message.ChannelName,
             Stream = stream,
             Status = MediaTaskStatus.PendingSelection,
             ExpiresAt = expiresAt

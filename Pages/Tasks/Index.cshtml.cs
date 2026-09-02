@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 using MediaTaskStatus = HoloScoop.Data.Entities.TaskStatus;
 
 namespace HoloScoop.Pages.Tasks;
@@ -95,9 +96,40 @@ public sealed class IndexModel(
     public async Task<IActionResult> OnPostSelectAsync(
         long id,
         DownloadMode mode,
+        string speakerChoice,
+        int? multipleSpeakerCount,
+        string? speakerNames,
         string rowVersion,
         CancellationToken cancellationToken)
     {
+        var speakerCount = speakerChoice switch
+        {
+            "single" => 1,
+            "multiple" when multipleSpeakerCount is >= 2 and <= 20 => multipleSpeakerCount.Value,
+            _ => 0
+        };
+        if (speakerCount == 0)
+        {
+            StatusMessage = "请选择单人直播，或输入 2 到 20 的实际说话人数。";
+            return RedirectToPage();
+        }
+
+        var names = (speakerNames ?? string.Empty)
+            .Split([',', '，', '、', ';', '；', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (speakerCount > 1 && (names.Length > speakerCount || names.Any(name => name.Length > 256)))
+        {
+            StatusMessage = "候选成员不能多于说话人数，且每个姓名不能超过 256 个字符。";
+            return RedirectToPage();
+        }
+        var speakerNamesJson = JsonSerializer.Serialize(names);
+        if (speakerNamesJson.Length > 2000)
+        {
+            StatusMessage = "候选成员列表过长。";
+            return RedirectToPage();
+        }
+
         byte[] expectedVersion;
         try
         {
@@ -109,7 +141,7 @@ public sealed class IndexModel(
         }
 
         var result = await taskCommands.QueueAsync(
-            id, mode, expectedVersion, DateTimeOffset.UtcNow, cancellationToken);
+            id, mode, speakerCount, speakerNamesJson, expectedVersion, DateTimeOffset.UtcNow, cancellationToken);
         StatusMessage = result switch
         {
             QueueTaskResult.Queued when mode == DownloadMode.SubtitlesOnly => "已加入仅字幕下载队列。",
@@ -118,6 +150,7 @@ public sealed class IndexModel(
             QueueTaskResult.NotFound => "没有找到该任务。",
             QueueTaskResult.NotSelectable => "该任务已经被处理，不能重复选择。",
             QueueTaskResult.ConcurrencyConflict => "任务已被其他操作更新，请刷新后重试。",
+            QueueTaskResult.MissingScheduleMember => "该日程没有成员姓名，无法建立单人声纹。",
             _ => "任务状态未改变。"
         };
         return RedirectToPage();

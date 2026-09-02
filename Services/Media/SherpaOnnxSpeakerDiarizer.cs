@@ -9,6 +9,7 @@ public interface ISpeakerDiarizer
 {
     Task<IReadOnlyList<DiarizedSpeakerTurn>> DiarizeAsync(
         string wavePath,
+        int speakerCount,
         CancellationToken cancellationToken = default);
 }
 
@@ -20,16 +21,19 @@ public sealed class SherpaOnnxSpeakerDiarizer(
 
     public Task<IReadOnlyList<DiarizedSpeakerTurn>> DiarizeAsync(
         string wavePath,
+        int speakerCount,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(wavePath);
+        ArgumentOutOfRangeException.ThrowIfLessThan(speakerCount, 1);
         return Task.Run<IReadOnlyList<DiarizedSpeakerTurn>>(
-            () => Diarize(wavePath, cancellationToken),
+            () => Diarize(wavePath, speakerCount, cancellationToken),
             cancellationToken);
     }
 
     private IReadOnlyList<DiarizedSpeakerTurn> Diarize(
         string wavePath,
+        int speakerCount,
         CancellationToken cancellationToken)
     {
         EnsureFileExists(wavePath, "diarization audio");
@@ -41,14 +45,7 @@ public sealed class SherpaOnnxSpeakerDiarizer(
         config.Segmentation.NumThreads = _options.NumThreads;
         config.Embedding.Model = _options.EmbeddingModelPath;
         config.Embedding.NumThreads = _options.NumThreads;
-        if (_options.ExpectedSpeakerCount > 0)
-        {
-            config.Clustering.NumClusters = _options.ExpectedSpeakerCount;
-        }
-        else
-        {
-            config.Clustering.Threshold = _options.ClusteringThreshold;
-        }
+        config.Clustering.NumClusters = speakerCount;
 
         using var diarizer = new OfflineSpeakerDiarization(config);
         var wave = PcmWaveFile.Read(wavePath);

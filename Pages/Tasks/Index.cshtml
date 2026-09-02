@@ -89,20 +89,29 @@ else
                             </div>
                         </div>
                     </div>
-                    <div class="card-footer d-flex flex-wrap gap-2">
-                        <form method="post" asp-page-handler="Select">
+                    <div class="card-footer">
+                        <form method="post" asp-page-handler="Select" class="d-flex flex-wrap align-items-center gap-2">
                             <input type="hidden" name="id" value="@task.Id" />
-                            <input type="hidden" name="mode" value="VideoAndSubtitles" />
                             <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(task.RowVersion)" />
-                            <button class="btn btn-primary" type="submit">下载视频和字幕</button>
+                            <span class="small text-secondary">说话人：</span>
+                            <div class="form-check form-check-inline mb-0">
+                                <input class="form-check-input" type="radio" name="speakerChoice" id="single-@task.Id" value="single" required />
+                                <label class="form-check-label" for="single-@task.Id">只有一个人</label>
+                            </div>
+                            <div class="form-check form-check-inline mb-0">
+                                <input class="form-check-input" type="radio" name="speakerChoice" id="multiple-@task.Id" value="multiple" required />
+                                <label class="form-check-label" for="multiple-@task.Id">多人</label>
+                            </div>
+                            <input class="form-control form-control-sm" style="width: 6rem" type="number"
+                                   name="multipleSpeakerCount" min="2" max="20" inputmode="numeric"
+                                   aria-label="多人直播的说话人数" placeholder="人数" />
+                            <input class="form-control form-control-sm flex-grow-1" style="min-width: 14rem" type="text"
+                                   name="speakerNames" maxlength="2000" value="@task.ScheduledMemberName"
+                                   aria-label="多人候选成员" placeholder="多人候选成员，用逗号分隔（可不填）" />
+                            <button class="btn btn-primary" type="submit" name="mode" value="VideoAndSubtitles">下载视频和字幕</button>
+                            <button class="btn btn-outline-secondary" type="submit" name="mode" value="SubtitlesOnly">仅下载字幕</button>
+                            <a class="btn btn-link ms-auto" href="@task.Stream.SourceUrl" target="_blank" rel="noopener">查看来源</a>
                         </form>
-                        <form method="post" asp-page-handler="Select">
-                            <input type="hidden" name="id" value="@task.Id" />
-                            <input type="hidden" name="mode" value="SubtitlesOnly" />
-                            <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(task.RowVersion)" />
-                            <button class="btn btn-outline-secondary" type="submit">仅下载字幕</button>
-                        </form>
-                        <a class="btn btn-link ms-auto" href="@task.Stream.SourceUrl" target="_blank" rel="noopener">查看来源</a>
                     </div>
                 </article>
             </div>

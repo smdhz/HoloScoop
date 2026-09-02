@@ -37,10 +37,23 @@ else
                     <td>@speaker.TurnCount</td>
                     <td>@speaker.SubtitleCount</td>
                     <td>
-                        <form method="post" asp-page-handler="Map" class="d-flex gap-2">
+                        <form method="post" asp-page-handler="Map" class="d-flex align-items-start gap-2">
                             <input type="hidden" name="streamId" value="@Model.StreamId" />
                             <input type="hidden" name="label" value="@speaker.Label" />
-                            <input class="form-control" name="name" value="@speaker.Name" maxlength="256" placeholder="例如：星街すいせい" />
+                            <div class="flex-grow-1">
+                                <input class="form-control" name="name" value="@(speaker.Name ?? speaker.SuggestedName)" maxlength="256" placeholder="例如：星街すいせい" />
+                                @if (speaker.Name is null && speaker.SuggestedName is not null)
+                                {
+                                    <div class="form-text">
+                                        声纹建议：@speaker.SuggestedName
+                                        @if (speaker.SuggestedScore is not null)
+                                        {
+                                            <span>（相似度 @speaker.SuggestedScore.Value.ToString("P1")）</span>
+                                        }
+                                        ，保存后才会作为确认姓名写入字幕。
+                                    </div>
+                                }
+                            </div>
                             <button class="btn btn-primary text-nowrap" type="submit">保存</button>
                         </form>
                     </td>

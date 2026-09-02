@@ -4,6 +4,7 @@ using HoloScoop.Jobs;
 using HoloScoop.Search;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 using TaskStatus = HoloScoop.Data.Entities.TaskStatus;
 
 namespace HoloScoop.Services.Media;
@@ -13,6 +14,7 @@ public sealed class MediaTaskProcessor(
     IMediaDownloader downloader,
     ISubtitleParser subtitleParser,
     ISpeakerDiarizer speakerDiarizer,
+    ISpeakerEmbeddingService speakerEmbeddingService,
     ISubtitleSearchService searchService,
     IOptions<MediaProcessingOptions> options,
     IOptions<SpeakerDiarizationOptions> diarizationOptions,
@@ -36,6 +38,13 @@ public sealed class MediaTaskProcessor(
 
         var mode = task.DownloadMode
             ?? throw new InvalidOperationException($"Media task {taskId} has no download mode.");
+        var speakerCount = task.SpeakerCount
+            ?? throw new InvalidOperationException($"Media task {taskId} has no confirmed speaker count.");
+        var speakerNames = ParseSpeakerNames(task.SpeakerNamesJson);
+        if (speakerCount == 1 && speakerNames.Count != 1)
+        {
+            throw new InvalidOperationException($"Single-speaker task {taskId} has no confirmed member name.");
+        }
         if (!Uri.TryCreate(task.Stream.SourceUrl, UriKind.Absolute, out var sourceUrl))
         {
             throw new InvalidOperationException($"Media task {taskId} has an invalid source URL.");
@@ -115,6 +124,7 @@ public sealed class MediaTaskProcessor(
         {
             var turns = await speakerDiarizer.DiarizeAsync(
                 result.DiarizationAudioPath,
+                speakerCount,
                 cancellationToken);
             if (turns.Count == 0)
             {
@@ -122,12 +132,22 @@ public sealed class MediaTaskProcessor(
                     $"Speaker diarization found no speech for media {task.Stream.ExternalId}.");
             }
 
+            var embeddings = await speakerEmbeddingService.ExtractAsync(
+                result.DiarizationAudioPath, turns, cancellationToken);
+            var suggestions = speakerCount > 1
+                ? await MatchVoiceProfilesAsync(embeddings, speakerNames, cancellationToken)
+                : new Dictionary<string, VoiceSuggestion>(StringComparer.Ordinal);
+
             foreach (var turn in turns)
             {
+                suggestions.TryGetValue(turn.SpeakerLabel, out var suggestion);
                 dbContext.SpeakerTurns.Add(new SpeakerTurn
                 {
                     StreamId = task.StreamId,
                     SpeakerLabel = turn.SpeakerLabel,
+                    SpeakerName = speakerCount == 1 ? speakerNames[0] : null,
+                    SuggestedSpeakerName = suggestion?.MemberName,
+                    SuggestedSpeakerScore = suggestion?.Score,
                     StartMs = turn.StartMs,
                     EndMs = turn.EndMs
                 });
@@ -137,6 +157,20 @@ public sealed class MediaTaskProcessor(
                 .Where(segment => segment.StreamId == task.StreamId)
                 .ToListAsync(cancellationToken);
             AssignSpeakerLabels(segments, turns, _diarizationOptions.MinimumSubtitleOverlapRatio);
+            if (speakerCount == 1)
+            {
+                foreach (var segment in segments.Where(segment => segment.SpeakerLabel != null))
+                {
+                    segment.SpeakerName = speakerNames[0];
+                }
+
+                var embedding = embeddings.Values.FirstOrDefault();
+                if (embedding is not null)
+                {
+                    await UpdateVoiceProfileAsync(
+                        speakerNames[0], embedding, task.StreamId, cancellationToken);
+                }
+            }
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
@@ -170,6 +204,123 @@ public sealed class MediaTaskProcessor(
         await dbContext.SaveChangesAsync(cancellationToken);
         CleanupWorkDirectory(task.Id, logger);
     }
+
+    private async Task<IReadOnlyDictionary<string, VoiceSuggestion>> MatchVoiceProfilesAsync(
+        IReadOnlyDictionary<string, float[]> embeddings,
+        IReadOnlyList<string> candidateNames,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.VoiceProfiles.AsNoTracking();
+        if (candidateNames.Count > 0)
+        {
+            query = query.Where(profile => candidateNames.Contains(profile.MemberName));
+        }
+        var profiles = await query.ToListAsync(cancellationToken);
+        var matches = new List<(string Label, string Name, double Score, double Margin)>();
+        foreach (var (label, embedding) in embeddings)
+        {
+            var scores = profiles
+                .Where(profile => profile.Dimension == embedding.Length)
+                .Select(profile => (profile.MemberName, Score: Cosine(embedding, FromBytes(profile.Embedding))))
+                .OrderByDescending(item => item.Score)
+                .ToArray();
+            if (scores.Length == 0) continue;
+            var margin = scores.Length == 1 ? 1d : scores[0].Score - scores[1].Score;
+            if (scores[0].Score >= _diarizationOptions.VoiceMatchThreshold &&
+                margin >= _diarizationOptions.VoiceMatchMinimumMargin)
+            {
+                matches.Add((label, scores[0].MemberName, scores[0].Score, margin));
+            }
+        }
+
+        var result = new Dictionary<string, VoiceSuggestion>(StringComparer.Ordinal);
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var match in matches.OrderByDescending(match => match.Score))
+        {
+            if (usedNames.Add(match.Name))
+            {
+                result[match.Label] = new VoiceSuggestion(match.Name, match.Score);
+            }
+        }
+        return result;
+    }
+
+    private async Task UpdateVoiceProfileAsync(
+        string memberName,
+        float[] embedding,
+        long streamId,
+        CancellationToken cancellationToken)
+    {
+        var profile = await dbContext.VoiceProfiles
+            .SingleOrDefaultAsync(item => item.MemberName == memberName, cancellationToken);
+        if (profile is null)
+        {
+            dbContext.VoiceProfiles.Add(new VoiceProfile
+            {
+                MemberName = memberName,
+                Embedding = ToBytes(embedding),
+                Dimension = embedding.Length,
+                SampleCount = 1,
+                SourceStreamId = streamId
+            });
+            return;
+        }
+
+        if (profile.Dimension != embedding.Length)
+        {
+            profile.Embedding = ToBytes(embedding);
+            profile.Dimension = embedding.Length;
+            profile.SampleCount = 1;
+            profile.SourceStreamId = streamId;
+            return;
+        }
+
+        var average = FromBytes(profile.Embedding);
+        for (var index = 0; index < average.Length; index++)
+        {
+            average[index] = (average[index] * profile.SampleCount + embedding[index]) /
+                (profile.SampleCount + 1);
+        }
+        profile.Embedding = ToBytes(SpeakerEmbeddingService.Normalize(average));
+        profile.SampleCount++;
+        profile.SourceStreamId = streamId;
+    }
+
+    private static IReadOnlyList<string> ParseSpeakerNames(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try
+        {
+            return JsonSerializer.Deserialize<string[]>(json) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static double Cosine(float[] left, float[] right)
+    {
+        double sum = 0;
+        for (var index = 0; index < left.Length; index++) sum += left[index] * right[index];
+        return sum;
+    }
+
+    private static byte[] ToBytes(float[] values)
+    {
+        var bytes = new byte[values.Length * sizeof(float)];
+        Buffer.BlockCopy(values, 0, bytes, 0, bytes.Length);
+        return bytes;
+    }
+
+    private static float[] FromBytes(byte[] bytes)
+    {
+        var values = new float[bytes.Length / sizeof(float)];
+        Buffer.BlockCopy(bytes, 0, values, 0, bytes.Length);
+        return values;
+    }
+
+    private sealed record VoiceSuggestion(string MemberName, double Score);
 
     internal static void AssignSpeakerLabels(
         IReadOnlyCollection<SubtitleSegment> segments,

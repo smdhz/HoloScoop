@@ -15,6 +15,8 @@ public sealed class ProcessingTaskConfiguration : IEntityTypeConfiguration<Media
             table.HasCheckConstraint("CK_Tasks_Status",
                 "[Status] IN ('PendingSelection', 'Queued', 'Downloading', 'ParsingSubtitles', 'Diarizing', 'Indexing', 'Completed', 'Failed', 'Expired')");
             table.HasCheckConstraint("CK_Tasks_AttemptCount", "[AttemptCount] >= 0");
+            table.HasCheckConstraint("CK_Tasks_SpeakerCount",
+                "[SpeakerCount] IS NULL OR ([SpeakerCount] >= 1 AND [SpeakerCount] <= 20)");
         });
         builder.HasKey(x => x.Id).HasName("PK_Tasks");
         builder.Property(x => x.Id).ValueGeneratedOnAdd();
@@ -30,6 +32,8 @@ public sealed class ProcessingTaskConfiguration : IEntityTypeConfiguration<Media
         builder.Property(x => x.ExpiresAt).HasPrecision(3);
         builder.Property(x => x.AttemptCount).HasDefaultValue(0);
         builder.Property(x => x.LastError).HasColumnType("nvarchar(max)");
+        builder.Property(x => x.SpeakerNamesJson).HasMaxLength(2000);
+        builder.Property(x => x.ScheduledMemberName).HasMaxLength(256);
         builder.Property(x => x.CreatedAt).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()");
         builder.Property(x => x.UpdatedAt).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()");
         builder.Property(x => x.RowVersion).IsRowVersion().IsConcurrencyToken();

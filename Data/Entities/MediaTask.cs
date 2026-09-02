@@ -7,6 +7,9 @@ public sealed class MediaTask
     public required string RedisMessageId { get; set; }
     public long StreamId { get; set; }
     public DownloadMode? DownloadMode { get; set; }
+    public int? SpeakerCount { get; set; }
+    public string? SpeakerNamesJson { get; set; }
+    public string? ScheduledMemberName { get; set; }
     public TaskStatus Status { get; set; } = TaskStatus.PendingSelection;
     public DateTimeOffset? ExpiresAt { get; set; }
     public int AttemptCount { get; set; }

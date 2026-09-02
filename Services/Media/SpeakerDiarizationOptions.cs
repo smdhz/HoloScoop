@@ -10,7 +10,7 @@ public sealed class SpeakerDiarizationOptions
     public string EmbeddingModelPath { get; set; } =
         "/opt/sherpa-onnx/nemo_en_titanet_large.onnx";
     public int NumThreads { get; set; } = 12;
-    public int ExpectedSpeakerCount { get; set; }
-    public float ClusteringThreshold { get; set; } = 0.5f;
     public double MinimumSubtitleOverlapRatio { get; set; } = 0.6;
+    public double VoiceMatchThreshold { get; set; } = 0.65;
+    public double VoiceMatchMinimumMargin { get; set; } = 0.05;
 }

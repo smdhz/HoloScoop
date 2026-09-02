@@ -1,5 +1,6 @@
 using HoloScoop.Data.Entities;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace HoloScoop.Data;
 
@@ -9,7 +10,8 @@ public enum QueueTaskResult
     NotFound,
     NotSelectable,
     Expired,
-    ConcurrencyConflict
+    ConcurrencyConflict,
+    MissingScheduleMember
 }
 
 public interface ITaskCommands
@@ -17,6 +19,8 @@ public interface ITaskCommands
     Task<QueueTaskResult> QueueAsync(
         long taskId,
         DownloadMode downloadMode,
+        int speakerCount,
+        string speakerNamesJson,
         byte[] expectedRowVersion,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
@@ -31,10 +35,17 @@ public sealed class TaskCommands(HoloScoopDbContext dbContext) : ITaskCommands
     public async Task<QueueTaskResult> QueueAsync(
         long taskId,
         DownloadMode downloadMode,
+        int speakerCount,
+        string speakerNamesJson,
         byte[] expectedRowVersion,
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
+        if (speakerCount is < 1 or > 20)
+        {
+            throw new ArgumentOutOfRangeException(nameof(speakerCount), "Speaker count must be between 1 and 20.");
+        }
+
         var task = await dbContext.Tasks.SingleOrDefaultAsync(x => x.Id == taskId, cancellationToken);
         if (task is null)
         {
@@ -67,6 +78,19 @@ public sealed class TaskCommands(HoloScoopDbContext dbContext) : ITaskCommands
         }
 
         task.DownloadMode = downloadMode;
+        task.SpeakerCount = speakerCount;
+        if (speakerCount == 1)
+        {
+            if (string.IsNullOrWhiteSpace(task.ScheduledMemberName))
+            {
+                return QueueTaskResult.MissingScheduleMember;
+            }
+            task.SpeakerNamesJson = JsonSerializer.Serialize(new[] { task.ScheduledMemberName.Trim() });
+        }
+        else
+        {
+            task.SpeakerNamesJson = speakerNamesJson;
+        }
         task.Status = Entities.TaskStatus.Queued;
         task.LastError = null;
 

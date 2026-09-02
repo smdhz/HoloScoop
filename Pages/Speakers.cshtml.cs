@@ -6,7 +6,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HoloScoop.Pages;
 
-public sealed record SpeakerMappingRow(string Label, string? Name, int TurnCount, int SubtitleCount);
+public sealed record SpeakerMappingRow(
+    string Label,
+    string? Name,
+    string? SuggestedName,
+    double? SuggestedScore,
+    int TurnCount,
+    int SubtitleCount);
 
 public sealed class SpeakersModel(
     HoloScoopDbContext dbContext,
@@ -36,11 +42,19 @@ public sealed class SpeakersModel(
         var turns = await dbContext.SpeakerTurns
             .AsNoTracking()
             .Where(turn => turn.StreamId == streamId)
-            .GroupBy(turn => new { turn.SpeakerLabel, turn.SpeakerName })
+            .GroupBy(turn => new
+            {
+                turn.SpeakerLabel,
+                turn.SpeakerName,
+                turn.SuggestedSpeakerName,
+                turn.SuggestedSpeakerScore
+            })
             .Select(group => new
             {
                 Label = group.Key.SpeakerLabel,
                 Name = group.Key.SpeakerName,
+                SuggestedName = group.Key.SuggestedSpeakerName,
+                SuggestedScore = group.Key.SuggestedSpeakerScore,
                 Count = group.Count()
             })
             .OrderBy(item => item.Label)
@@ -55,6 +69,8 @@ public sealed class SpeakersModel(
             .Select(turn => new SpeakerMappingRow(
                 turn.Label,
                 turn.Name,
+                turn.SuggestedName,
+                turn.SuggestedScore,
                 turn.Count,
                 subtitleCounts.GetValueOrDefault(turn.Label)))
             .ToArray();

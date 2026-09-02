@@ -18,6 +18,7 @@ public sealed class SpeakerTurnConfiguration : IEntityTypeConfiguration<SpeakerT
         builder.Property(x => x.Id).ValueGeneratedOnAdd();
         builder.Property(x => x.SpeakerLabel).HasMaxLength(64).IsRequired();
         builder.Property(x => x.SpeakerName).HasMaxLength(256);
+        builder.Property(x => x.SuggestedSpeakerName).HasMaxLength(256);
         builder.Property(x => x.CreatedAt).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()");
         builder.HasOne(x => x.Stream)
             .WithMany(x => x.SpeakerTurns)

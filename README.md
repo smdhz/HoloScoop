@@ -55,6 +55,9 @@ HoloScoop/
 - `RedisMessageId`
 - `StreamId`：关联 `Streams`
 - `DownloadMode`：可空枚举，值为 `VideoAndSubtitles` 或 `SubtitlesOnly`
+- `SpeakerCount`：用户在排队前确认的本场实际说话人数
+- `SpeakerNamesJson`：单人直播自动使用日程成员姓名；多人直播保存用户提供的候选姓名
+- `ScheduledMemberName`：候选任务创建时固化的日程成员姓名，不受后续直播元数据更新影响
 - `Status`：任务当前状态
 - `ExpiresAt`
 - `AttemptCount`
@@ -133,11 +136,11 @@ Expired
 
 1. 使用 Consumer Group 从 Redis Stream 读取任务。
 2. 根据 Redis 消息 ID 去重，将候选任务和过期时间写入 MSSQL；写入成功后再 `XACK`。
-3. 管理页面展示已开播至少 1 小时且尚未过期的候选任务，并提供两个操作：
+3. 管理页面展示已开播至少 1 小时且尚未过期的候选任务。排队前必须选择“只有一个人”或输入 2～20 的实际说话人数；单人直播直接使用日程成员姓名，多人直播可填写本场候选成员。页面提供两个操作：
    - **下载视频和字幕**：将 `DownloadMode` 设为 `VideoAndSubtitles`。
    - **仅下载字幕**：将 `DownloadMode` 设为 `SubtitlesOnly`。
 4. 选择后将当前 `Tasks` 记录改为 `Queued`；用户不做选择时不开始下载，到期后将该记录改为 `Expired`。
-5. `yt-dlp` 按用户选择下载视频和已有字幕；即使选择“仅下载字幕”，也会临时下载来源提供的默认最佳音频，不主动选择低质量格式。
+5. `yt-dlp` 按用户选择下载视频和已有字幕；媒体库已有该视频时使用 `--skip-download`，复用本地视频抽取音轨，避免重复下载。没有本地视频且选择“仅下载字幕”时，会临时下载来源提供的默认最佳音频。
 6. `ffmpeg` 把音轨转换为 16 kHz 单声道 WAV，sherpa-onnx 在 CPU 上生成匿名说话人时间段，再按时间重叠把已有字幕归到说话人名下。
 7. 把可搜索内容（包括匿名标签和已确认的成员名）同步到 Meilisearch。
 8. Web 页面提供关键词与说话人过滤，并跳转到本地视频或 YouTube 的对应时间戳。
@@ -236,6 +239,8 @@ NAS 挂载参数由 `compose.yaml` 中的 `library_data` 卷配置统一管理�
 3. [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 使用公开的 segmentation 和 TitaNet embedding ONNX 模型在 CPU 上生成 `SPEAKER_00`、`SPEAKER_01` 等时间段。
 4. 系统按时间重叠将已有字幕归到匿名标签，写入 MSSQL 和 Meilisearch。每场直播可在说话人页面人工确认匿名标签与成员姓名，之后可以按姓名过滤全文搜索。
 5. 任务完成后删除临时音频；选择“仅下载字幕”时也不会长期保存下载的原始音频。
+
+用户确认的单人直播会使用 TitaNet embedding 更新该成员的声纹档案。多人直播先按用户填写的候选成员匹配；未填写候选人时才在全库中保守匹配。匹配结果只作为说话人页面输入框的建议值，必须人工保存后才写入字幕和搜索索引。相似度不足、与第二候选差距太小或同一成员被多个匿名说话人竞争时保持未匹配。
 
 当前方案复用 YouTube 已有字幕，不重新执行 Whisper 转写，所以 CPU 只承担音频解码和说话人分离。Quartz 的媒体处理任务禁止重入，当前单进程实际一次只跑一个直播，避免 10980XE 同时处理多个长音频导致内存与 CPU 争用。以后如果积累每位成员的干净参考音频，可以增加本地声纹匹配；在此之前只承诺匿名标签和人工映射，不假定系统能自动知道真实姓名。
 

@@ -51,6 +51,9 @@ BEGIN
         RedisMessageId   nvarchar(64)           NOT NULL,
         StreamId         bigint                 NOT NULL,
         DownloadMode     varchar(32)            NULL,
+        SpeakerCount     int                    NULL,
+        SpeakerNamesJson nvarchar(2000)         NULL,
+        ScheduledMemberName nvarchar(256)       NULL,
         Status           varchar(32)            NOT NULL,
         ExpiresAt        datetimeoffset(3)       NULL,
         AttemptCount     int                     NOT NULL
@@ -87,6 +90,40 @@ BEGIN
         ),
         CONSTRAINT CK_Tasks_AttemptCount CHECK (AttemptCount >= 0)
     );
+END;
+
+IF COL_LENGTH(N'dbo.Tasks', N'SpeakerCount') IS NULL
+BEGIN
+    ALTER TABLE dbo.Tasks ADD SpeakerCount int NULL;
+END;
+
+IF COL_LENGTH(N'dbo.Tasks', N'SpeakerNamesJson') IS NULL
+BEGIN
+    ALTER TABLE dbo.Tasks ADD SpeakerNamesJson nvarchar(2000) NULL;
+END;
+
+IF COL_LENGTH(N'dbo.Tasks', N'ScheduledMemberName') IS NULL
+BEGIN
+    ALTER TABLE dbo.Tasks ADD ScheduledMemberName nvarchar(256) NULL;
+END;
+
+EXEC(N'
+    UPDATE task
+    SET ScheduledMemberName = stream.ChannelName
+    FROM dbo.Tasks AS task
+    INNER JOIN dbo.Streams AS stream ON stream.Id = task.StreamId
+    WHERE task.ScheduledMemberName IS NULL;
+');
+
+IF NOT EXISTS
+(
+    SELECT 1 FROM sys.check_constraints
+    WHERE parent_object_id = OBJECT_ID(N'dbo.Tasks')
+      AND name = N'CK_Tasks_SpeakerCount'
+)
+BEGIN
+    ALTER TABLE dbo.Tasks WITH CHECK ADD CONSTRAINT CK_Tasks_SpeakerCount CHECK
+        (SpeakerCount IS NULL OR (SpeakerCount >= 1 AND SpeakerCount <= 20));
 END;
 
 IF EXISTS
@@ -230,6 +267,8 @@ BEGIN
         StreamId     bigint                 NOT NULL,
         SpeakerLabel nvarchar(64)           NOT NULL,
         SpeakerName  nvarchar(256)          NULL,
+        SuggestedSpeakerName  nvarchar(256) NULL,
+        SuggestedSpeakerScore float         NULL,
         StartMs      bigint                 NOT NULL,
         EndMs        bigint                 NOT NULL,
         CreatedAt    datetimeoffset(3)      NOT NULL
@@ -241,6 +280,17 @@ BEGIN
         CONSTRAINT CK_SpeakerTurns_TimeRange CHECK
             (StartMs >= 0 AND EndMs > StartMs)
     );
+END;
+
+
+IF COL_LENGTH(N'dbo.SpeakerTurns', N'SuggestedSpeakerName') IS NULL
+BEGIN
+    ALTER TABLE dbo.SpeakerTurns ADD SuggestedSpeakerName nvarchar(256) NULL;
+END;
+
+IF COL_LENGTH(N'dbo.SpeakerTurns', N'SuggestedSpeakerScore') IS NULL
+BEGIN
+    ALTER TABLE dbo.SpeakerTurns ADD SuggestedSpeakerScore float NULL;
 END;
 
 IF NOT EXISTS
@@ -265,6 +315,38 @@ IF NOT EXISTS
 BEGIN
     CREATE INDEX IX_SpeakerTurns_StreamId_SpeakerLabel
         ON dbo.SpeakerTurns (StreamId, SpeakerLabel);
+END;
+
+IF OBJECT_ID(N'dbo.VoiceProfiles', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.VoiceProfiles
+    (
+        Id             bigint IDENTITY(1, 1) NOT NULL,
+        MemberName     nvarchar(256)          NOT NULL,
+        Embedding      varbinary(max)         NOT NULL,
+        Dimension      int                    NOT NULL,
+        SampleCount    int                    NOT NULL,
+        SourceStreamId bigint                 NOT NULL,
+        CreatedAt      datetimeoffset(3)      NOT NULL
+            CONSTRAINT DF_VoiceProfiles_CreatedAt DEFAULT SYSUTCDATETIME(),
+        UpdatedAt      datetimeoffset(3)      NOT NULL
+            CONSTRAINT DF_VoiceProfiles_UpdatedAt DEFAULT SYSUTCDATETIME(),
+
+        CONSTRAINT PK_VoiceProfiles PRIMARY KEY CLUSTERED (Id),
+        CONSTRAINT CK_VoiceProfiles_Dimension CHECK (Dimension > 0),
+        CONSTRAINT CK_VoiceProfiles_SampleCount CHECK (SampleCount > 0)
+    );
+END;
+
+IF NOT EXISTS
+(
+    SELECT 1 FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.VoiceProfiles')
+      AND name = N'UX_VoiceProfiles_MemberName'
+)
+BEGIN
+    CREATE UNIQUE INDEX UX_VoiceProfiles_MemberName
+        ON dbo.VoiceProfiles (MemberName);
 END;
 
 COMMIT TRANSACTION;

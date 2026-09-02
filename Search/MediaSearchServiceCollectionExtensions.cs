@@ -21,12 +21,12 @@ public static class MediaSearchServiceCollectionExtensions
         services.AddOptions<SpeakerDiarizationOptions>()
             .Bind(configuration.GetSection(SpeakerDiarizationOptions.SectionName))
             .Validate(options => options.NumThreads > 0, "SpeakerDiarization:NumThreads must be positive.")
-            .Validate(options => options.ExpectedSpeakerCount >= 0,
-                "SpeakerDiarization:ExpectedSpeakerCount cannot be negative.")
-            .Validate(options => options.ClusteringThreshold is > 0 and < 1,
-                "SpeakerDiarization:ClusteringThreshold must be between zero and one.")
             .Validate(options => options.MinimumSubtitleOverlapRatio is > 0 and <= 1,
                 "SpeakerDiarization:MinimumSubtitleOverlapRatio must be between zero and one.")
+            .Validate(options => options.VoiceMatchThreshold is > 0 and <= 1,
+                "SpeakerDiarization:VoiceMatchThreshold must be between zero and one.")
+            .Validate(options => options.VoiceMatchMinimumMargin is >= 0 and < 1,
+                "SpeakerDiarization:VoiceMatchMinimumMargin must be between zero and one.")
             .ValidateOnStart();
 
         services.AddOptions<MeilisearchOptions>()
@@ -40,6 +40,7 @@ public static class MediaSearchServiceCollectionExtensions
 
         services.AddScoped<IMediaDownloader, YtDlpMediaDownloader>();
         services.AddSingleton<ISpeakerDiarizer, SherpaOnnxSpeakerDiarizer>();
+        services.AddSingleton<ISpeakerEmbeddingService, SpeakerEmbeddingService>();
         services.AddSingleton<ILocalMediaLibrary, LocalMediaLibrary>();
         services.AddSingleton<ISubtitleParser, WebVttParser>();
         services.AddScoped<IMediaTaskProcessor, MediaTaskProcessor>();

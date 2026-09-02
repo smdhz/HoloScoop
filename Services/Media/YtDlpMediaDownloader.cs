@@ -46,7 +46,15 @@ public sealed class YtDlpMediaDownloader(
         }
         Directory.CreateDirectory(workDirectory);
 
-        var startInfo = BuildStartInfo(request, workDirectory);
+        var existingVideoPath = FindExistingVideo(libraryDirectory);
+        if (existingVideoPath is not null)
+        {
+            logger.LogInformation(
+                "Reusing existing library video for {ExternalId}; yt-dlp will skip media download",
+                externalId);
+        }
+
+        var startInfo = BuildStartInfo(request, workDirectory, existingVideoPath is not null);
         using var process = new Process { StartInfo = startInfo };
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(_options.DownloadTimeout);
@@ -107,6 +115,7 @@ public sealed class YtDlpMediaDownloader(
         var diarizationAudioPath = await PrepareDiarizationAudioAsync(
             workDirectory,
             request,
+            existingVideoPath,
             timeout.Token);
         var result = await PromoteArtifactsAsync(
             workDirectory,
@@ -114,10 +123,19 @@ public sealed class YtDlpMediaDownloader(
             externalId,
             request.TaskId,
             cancellationToken);
+        if (existingVideoPath is not null)
+        {
+            var existingRelativePath = Path.Combine(
+                "youtube", externalId, "video", Path.GetFileName(existingVideoPath)).Replace('\\', '/');
+            result = result with { VideoRelativePaths = [existingRelativePath] };
+        }
         return result with { DiarizationAudioPath = diarizationAudioPath };
     }
 
-    private ProcessStartInfo BuildStartInfo(MediaDownloadRequest request, string workDirectory)
+    private ProcessStartInfo BuildStartInfo(
+        MediaDownloadRequest request,
+        string workDirectory,
+        bool skipMediaDownload)
     {
         var info = new ProcessStartInfo
         {
@@ -143,7 +161,11 @@ public sealed class YtDlpMediaDownloader(
             "--retry-sleep", "http:exp=1:20",
             "--output", $"{request.ExternalId}.%(ext)s");
 
-        if (request.Mode == DownloadMode.SubtitlesOnly)
+        if (skipMediaDownload)
+        {
+            AddArguments(info, "--skip-download");
+        }
+        else if (request.Mode == DownloadMode.SubtitlesOnly)
         {
             AddArguments(info, "--format", "ba/b");
         }
@@ -163,9 +185,11 @@ public sealed class YtDlpMediaDownloader(
     private async Task<string> PrepareDiarizationAudioAsync(
         string workDirectory,
         MediaDownloadRequest request,
+        string? existingVideoPath,
         CancellationToken cancellationToken)
     {
-        var inputPath = Directory.EnumerateFiles(workDirectory, "*", SearchOption.TopDirectoryOnly)
+        var inputPath = existingVideoPath ?? Directory
+            .EnumerateFiles(workDirectory, "*", SearchOption.TopDirectoryOnly)
             .Where(path => MediaExtensions.Contains(Path.GetExtension(path)))
             .OrderByDescending(path => new FileInfo(path).Length)
             .FirstOrDefault()
@@ -226,12 +250,22 @@ public sealed class YtDlpMediaDownloader(
                 $"Unable to launch ffmpeg at '{_options.FfmpegPath}': {exception.Message}");
         }
 
-        if (request.Mode == DownloadMode.SubtitlesOnly)
+        if (existingVideoPath is null && request.Mode == DownloadMode.SubtitlesOnly)
         {
             File.Delete(inputPath);
         }
 
         return outputPath;
+    }
+
+    private static string? FindExistingVideo(string libraryDirectory)
+    {
+        var directory = SafeMediaPath.UnderRoot(libraryDirectory, "video");
+        if (!Directory.Exists(directory)) return null;
+        return Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly)
+            .Where(path => VideoExtensions.Contains(Path.GetExtension(path)))
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
     }
 
     private static void AddArguments(ProcessStartInfo info, params string[] arguments)
