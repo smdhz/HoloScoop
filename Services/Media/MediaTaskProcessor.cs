@@ -41,6 +41,12 @@ public sealed class MediaTaskProcessor(
             new MediaDownloadRequest(task.Id, task.Stream.ExternalId, sourceUrl, mode),
             cancellationToken);
 
+        if (mode == DownloadMode.VideoAndSubtitles && result.VideoRelativePaths.Count == 0)
+        {
+            throw new MediaDownloadException(
+                $"yt-dlp returned no video file for media {task.Stream.ExternalId}.");
+        }
+
         task.Status = TaskStatus.ParsingSubtitles;
         await dbContext.SaveChangesAsync(cancellationToken);
 

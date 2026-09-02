@@ -25,6 +25,27 @@ body {
   border-radius: .5rem;
 }
 
+.recent-project-card {
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.recent-project-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 .5rem 1.25rem rgba(15, 23, 42, .12);
+}
+
+.recent-project-thumbnail {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #e2e8f0;
+}
+
+.recent-project-thumbnail-placeholder {
+  background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+}
+
 .min-width-0 {
   min-width: 0;
 }

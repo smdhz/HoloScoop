@@ -14,7 +14,7 @@ services:
       ASPNETCORE_ENVIRONMENT: "Production"
       ConnectionStrings__DefaultConnection: "${MSSQL_CONNECTION_STRING:?Set MSSQL_CONNECTION_STRING in .env}"
       Redis__ConnectionString: "${REDIS_CONNECTION_STRING:?Set REDIS_CONNECTION_STRING in .env}"
-      Redis__StreamName: "${REDIS_STREAM_NAME:-holoscoop:tasks}"
+      Redis__StreamName: "${REDIS_STREAM_NAME:-forge:calendar:add}"
       Meilisearch__Url: "http://meilisearch:7700"
       Meilisearch__MasterKey: "${MEILI_MASTER_KEY:?Set MEILI_MASTER_KEY in .env}"
       Media__LibraryPath: "/data/library"
@@ -46,10 +46,11 @@ services:
 
 volumes:
   library_data:
+    name: holoscoop_library_subdir
     driver: local
     driver_opts:
       type: nfs
       o: "addr=10.16.1.101,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14"
-      device: ":/volume1/media/Video/Hololive"
+      device: ":/volume1/media/Video/Hololive/library"
   work_data:
   meilisearch_data:

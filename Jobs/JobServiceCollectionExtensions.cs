@@ -11,8 +11,8 @@ public static class JobServiceCollectionExtensions
         services.AddOptions<MaintenanceOptions>()
             .Bind(configuration.GetSection(MaintenanceOptions.SectionName))
             .Validate(
-                options => options.UnselectedRetentionDays > 0,
-                "Maintenance:UnselectedRetentionDays must be positive.")
+                options => options.UnselectedRetentionDays > 0 && options.CompletedRetentionDays > 0,
+                "Maintenance retention periods must be positive.")
             .ValidateOnStart();
         services.AddScoped<ITaskStateMachine, TaskStateMachine>();
         services.AddQuartz(configurator =>
@@ -33,10 +33,10 @@ public static class JobServiceCollectionExtensions
                 .StartNow()
                 .WithSimpleSchedule(schedule => schedule.WithIntervalInSeconds(5).RepeatForever()));
 
-            var cleanupKey = new JobKey("cleanup-unselected-tasks");
+            var cleanupKey = new JobKey("cleanup-expired-task-records");
             configurator.AddJob<CleanupUnselectedTasksJob>(options => options.WithIdentity(cleanupKey));
             configurator.AddTrigger(options => options
-                .WithIdentity("cleanup-unselected-tasks-daily")
+                .WithIdentity("cleanup-expired-task-records-daily")
                 .ForJob(cleanupKey)
                 .StartNow()
                 .WithSimpleSchedule(schedule => schedule.WithIntervalInHours(24).RepeatForever()));

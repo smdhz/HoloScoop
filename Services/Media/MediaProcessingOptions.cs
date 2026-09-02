@@ -10,5 +10,5 @@ public sealed class MediaProcessingOptions
     public string LibraryPath { get => LibraryRoot; set => LibraryRoot = value; }
     public string WorkPath { get => WorkRoot; set => WorkRoot = value; }
     public TimeSpan DownloadTimeout { get; set; } = TimeSpan.FromHours(2);
-    public string[] SubtitleLanguages { get; set; } = ["ja", "en", "zh-Hans", "zh-Hant"];
+    public string[] SubtitleLanguages { get; set; } = ["en", "ja"];
 }

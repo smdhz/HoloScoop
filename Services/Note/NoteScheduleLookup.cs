@@ -21,7 +21,7 @@ public interface INoteScheduleLookup
 
 public sealed record NoteScheduleSearchResult(
     Guid Id,
-    DateTimeOffset StartDt,
+    DateTime StartDt,
     string MemberName,
     string StreamTitle,
     string StreamUrl,
@@ -95,7 +95,7 @@ public sealed class NoteScheduleLookup(NoteScheduleDbContext dbContext) : INoteS
             ChannelName: row.MemberName,
             Description: null,
             ThumbnailUrl: row.StreamImage,
-            ScheduledAt: row.StartDt,
+            ScheduledAt: new DateTimeOffset(row.StartDt),
             StartedAt: null,
             EndedAt: null,
             DurationMs: null);

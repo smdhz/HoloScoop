@@ -35,6 +35,10 @@ public sealed class YtDlpMediaDownloader(
 
         var workDirectory = SafeMediaPath.UnderRoot(_options.WorkRoot, request.TaskId.ToString());
         var libraryDirectory = SafeMediaPath.UnderRoot(_options.LibraryRoot, "youtube", externalId);
+        if (Directory.Exists(workDirectory))
+        {
+            Directory.Delete(workDirectory, recursive: true);
+        }
         Directory.CreateDirectory(workDirectory);
 
         var startInfo = BuildStartInfo(request, workDirectory);
@@ -61,9 +65,22 @@ public sealed class YtDlpMediaDownloader(
 
             if (process.ExitCode != 0)
             {
+                var truncatedError = Truncate(standardError);
+                logger.LogError(
+                    "yt-dlp failed for task {TaskId} with exit code {ExitCode}: {StandardError}",
+                    request.TaskId,
+                    process.ExitCode,
+                    truncatedError);
                 throw new MediaDownloadException(
                     $"yt-dlp exited with code {process.ExitCode}.",
                     process.ExitCode,
+                    truncatedError);
+            }
+            else if (!string.IsNullOrWhiteSpace(standardError))
+            {
+                logger.LogWarning(
+                    "yt-dlp completed task {TaskId} with warnings: {StandardError}",
+                    request.TaskId,
                     Truncate(standardError));
             }
         }
@@ -82,7 +99,12 @@ public sealed class YtDlpMediaDownloader(
             throw new MediaDownloadException($"Unable to launch yt-dlp at '{_options.YtDlpPath}': {exception.Message}");
         }
 
-        var result = PromoteArtifacts(workDirectory, libraryDirectory, externalId);
+        var result = await PromoteArtifactsAsync(
+            workDirectory,
+            libraryDirectory,
+            externalId,
+            request.TaskId,
+            cancellationToken);
         Directory.Delete(workDirectory, recursive: true);
         return result;
     }
@@ -102,12 +124,15 @@ public sealed class YtDlpMediaDownloader(
         AddArguments(info,
             "--no-playlist",
             "--no-progress",
+            "--ignore-errors",
             "--write-info-json",
             "--write-thumbnail",
             "--write-subs",
             "--write-auto-subs",
             "--sub-format", "vtt",
             "--sub-langs", string.Join(',', _options.SubtitleLanguages),
+            "--sleep-subtitles", "5",
+            "--retry-sleep", "http:exp=1:20",
             "--output", $"{request.ExternalId}.%(ext)s");
 
         if (request.Mode == DownloadMode.SubtitlesOnly)
@@ -135,10 +160,12 @@ public sealed class YtDlpMediaDownloader(
         }
     }
 
-    private static MediaDownloadResult PromoteArtifacts(
+    private async Task<MediaDownloadResult> PromoteArtifactsAsync(
         string workDirectory,
         string libraryDirectory,
-        string externalId)
+        string externalId,
+        long taskId,
+        CancellationToken cancellationToken)
     {
         var subtitles = new List<DownloadedSubtitle>();
         var videos = new List<string>();
@@ -174,8 +201,27 @@ public sealed class YtDlpMediaDownloader(
             var destinationDirectory = SafeMediaPath.UnderRoot(libraryDirectory, category);
             Directory.CreateDirectory(destinationDirectory);
             var destination = SafeMediaPath.UnderRoot(destinationDirectory, fileName);
-            File.Copy(sourcePath, destination, overwrite: true);
+            var fileSize = new FileInfo(sourcePath).Length;
+            logger.LogInformation(
+                "Promoting {Category} artifact {FileName} for task {TaskId} to NFS ({FileSizeBytes} bytes)",
+                category,
+                fileName,
+                taskId,
+                fileSize);
+            await CopyWithProgressAsync(
+                sourcePath,
+                destination,
+                taskId,
+                fileName,
+                fileSize,
+                cancellationToken);
             File.Delete(sourcePath);
+            logger.LogInformation(
+                "Promoted {Category} artifact {FileName} for task {TaskId} to {Destination}",
+                category,
+                fileName,
+                taskId,
+                destination);
 
             var relative = Path.Combine("youtube", externalId, category, fileName).Replace('\\', '/');
             switch (category)
@@ -200,7 +246,65 @@ public sealed class YtDlpMediaDownloader(
             }
         }
 
+        logger.LogInformation(
+            "Finished promoting artifacts for task {TaskId}: {VideoCount} video(s), {SubtitleCount} subtitle(s), {ThumbnailCount} thumbnail(s)",
+            taskId,
+            videos.Count,
+            subtitles.Count,
+            thumbnails.Count);
         return new MediaDownloadResult(externalId, metadata, subtitles, videos, thumbnails);
+    }
+
+    private async Task CopyWithProgressAsync(
+        string sourcePath,
+        string destinationPath,
+        long taskId,
+        string fileName,
+        long totalBytes,
+        CancellationToken cancellationToken)
+    {
+        const int bufferSize = 1024 * 1024;
+        await using var source = new FileStream(
+            sourcePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using var destination = new FileStream(
+            destinationPath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+        var buffer = new byte[bufferSize];
+        long copiedBytes = 0;
+        var lastProgress = Stopwatch.GetTimestamp();
+        int bytesRead;
+        while ((bytesRead = await source.ReadAsync(buffer, cancellationToken)) > 0)
+        {
+            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+            copiedBytes += bytesRead;
+
+            if (Stopwatch.GetElapsedTime(lastProgress) < TimeSpan.FromSeconds(10))
+            {
+                continue;
+            }
+
+            var percent = totalBytes == 0 ? 100d : copiedBytes * 100d / totalBytes;
+            logger.LogInformation(
+                "Promoting artifact {FileName} for task {TaskId}: {CopiedBytes}/{TotalBytes} bytes ({Percent:F1}%)",
+                fileName,
+                taskId,
+                copiedBytes,
+                totalBytes,
+                percent);
+            lastProgress = Stopwatch.GetTimestamp();
+        }
+
+        await destination.FlushAsync(cancellationToken);
     }
 
     private static (string Language, string Source) InferSubtitleDetails(

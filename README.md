@@ -157,7 +157,7 @@ HoloScoop 只有一台本地服务器，并且不为存储增加额外预算，�
     └── {TaskId}/
 ```
 
-容器内分别挂载为 `/data/library` 和 `/data/work`。业务数据和配置只使用类似 `youtube/{ExternalId}/subtitles/ja.auto.vtt` 的相对路径，不能保存 `/data/holoscoop/...` 或 `/data/library/...` 之类依赖部署环境的绝对路径。
+NAS 的 `Hololive/library` 目录在容器内挂载为 `/data/library`；临时工作卷挂载为 `/data/work`。业务数据和配置只使用类似 `youtube/{ExternalId}/subtitles/ja.auto.vtt` 的相对路径，不能保存 `/data/holoscoop/...` 或 `/data/library/...` 之类依赖部署环境的绝对路径。
 
 - 普通直播：长期保存元数据、字幕、聊天记录和缩略图。
 - 高价值直播：按明确规则或人工标记，将视频保存在 `library`。
@@ -186,11 +186,11 @@ HoloScoop 只有一台本地服务器，并且不为存储增加额外预算，�
 - 提供简单的任务进度、失败原因和重试入口。
 - 提供字幕关键词搜索，并能跳转到 YouTube 时间戳。
 - 落实普通直播不长期保存视频的默认策略。
-- 每天清理创建超过 14 天且从未选择下载模式的任务，并删除没有其他任务或字幕引用的孤立直播记录。
+- 每天清理创建超过 14 天且从未选择下载模式的任务、完成超过 100 天的任务记录，并删除没有其他任务或字幕引用的孤立直播记录。媒体库、字幕和直播数据不随已完成任务记录删除。
 
 ### Redis 消息格式
 
-Consumer Group 默认读取 `holoscoop:tasks`。Redis Stream 是唯一任务入口，标准消息只包含 `Note.dbo.HololiveSchedule` 的主键：
+Consumer Group 默认读取 Forge 写入的 `forge:calendar:add`。Redis Stream 是唯一任务入口，标准消息只包含 `Note.dbo.HololiveSchedule` 的主键：
 
 ```text
 id = {HololiveSchedule.Id GUID}
@@ -211,17 +211,11 @@ docker compose up -d --build
 
 首次部署还需要由具备建表权限的账号执行 [`database/schema.sql`](database/schema.sql)。
 
-在本机试运行且暂时不挂载 NAS 时，使用本地卷覆盖文件：
-
-```powershell
-docker compose -f compose.yaml -f compose.local.yaml up -d --build
-```
-
-正式 `compose.yaml` 固定使用 `Production` 和 NAS NFS。`compose.local.yaml` 将应用覆盖为 `Development` 并使用本地 `library_data`。两种模式都使用 Redis Stream 入口、Note 数据补全和 Quartz 处理链路。
+`compose.yaml` 固定使用 `Production` 和 NAS NFS，并启用 Redis Stream 入口、Note 数据补全和 Quartz 处理链路。
 
 应用默认通过 `http://localhost:8080` 访问。Meilisearch 端口只绑定在宿主机的 `127.0.0.1:7700`，容器内的 HoloScoop 通过 `http://meilisearch:7700` 访问它。
 
-应用镜像基于 .NET 10 Ubuntu 镜像构建，并安装 `yt-dlp`、`ffmpeg` 以及 YouTube 解析所需的 Deno JavaScript 运行时。Compose 将 `10.16.1.101:/volume1/media/Video/Hololive` 作为 NFS 卷挂载到容器内的 `/data/library`，长期文件直接保存在该目录；临时工作目录 `/data/work` 和 Meilisearch 数据分别使用本地 Docker 卷 `work_data` 和 `meilisearch_data`。
+应用镜像基于 .NET 10 Ubuntu 镜像构建，并安装 `yt-dlp`、`ffmpeg` 以及 YouTube 解析所需的 Deno JavaScript 运行时。Compose 将 `10.16.1.101:/volume1/media/Video/Hololive/library` 作为 NFS 卷挂载到容器内的 `/data/library`；临时工作目录 `/data/work` 和 Meilisearch 数据分别使用本地 Docker 卷 `work_data` 和 `meilisearch_data`。
 
 NAS 挂载参数由 `compose.yaml` 中的 `library_data` 卷配置统一管理。
 

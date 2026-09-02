@@ -29,6 +29,20 @@ if (builder.Configuration.GetValue("Jobs:Enabled", true))
 
 var app = builder.Build();
 
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<HoloScoopDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("StartupTaskRecovery");
+    var recovered = await InterruptedTaskRecovery.RequeueAsync(dbContext);
+    if (recovered > 0)
+    {
+        logger.LogWarning(
+            "Requeued {TaskCount} interrupted media task(s) during application startup.",
+            recovered);
+    }
+}
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");

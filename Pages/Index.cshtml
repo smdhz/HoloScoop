@@ -1,20 +1,61 @@
-﻿@page
+@page
 @model IndexModel
 @{
     ViewData["Title"] = "首页";
 }
 
-<div class="mb-4">
-    <h1 class="h3">从直播字幕里找到那一刻</h1>
-    <p class="text-secondary">接收候选直播，按需保存字幕或视频，并从搜索结果直接跳转到 YouTube 对应时间点。</p>
-    <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-primary" asp-page="/Tasks/Index">管理候选任务</a>
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+    <h1 class="h3 mb-0">最新处理</h1>
+    <div class="d-flex gap-2">
+        <a class="btn btn-primary" asp-page="/Tasks/Index">管理任务</a>
         <a class="btn btn-outline-primary" asp-page="/Search/Index">搜索字幕</a>
     </div>
 </div>
 
-<div class="row g-3">
-    <div class="col-md-4"><div class="card h-100"><div class="card-body"><h2 class="h5">先选择，再下载</h2><p class="text-secondary mb-0">Redis 收到的任务先进入候选列表，不会自动消耗存储。</p></div></div></div>
-    <div class="col-md-4"><div class="card h-100"><div class="card-body"><h2 class="h5">字幕是权威数据</h2><p class="text-secondary mb-0">字幕分段保存在 MSSQL，并可随时重建搜索索引。</p></div></div></div>
-    <div class="col-md-4"><div class="card h-100"><div class="card-body"><h2 class="h5">一键跳转原视频</h2><p class="text-secondary mb-0">每条结果都带时间戳，直接打开对应直播片段。</p></div></div></div>
-</div>
+@if (Model.RecentProjects.Count == 0)
+{
+    <div class="empty-state">还没有处理完成的项目。</div>
+}
+else
+{
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-4">
+        @foreach (var project in Model.RecentProjects)
+        {
+            var thumbnailUrl = project.HasLocalThumbnail
+                ? Url.Page("/Index", "Thumbnail", new { streamId = project.StreamId })
+                : project.RemoteThumbnailUrl;
+            <div class="col">
+                <article class="card h-100 overflow-hidden recent-project-card">
+                    <a href="@project.SourceUrl" target="_blank" rel="noopener" class="text-decoration-none">
+                        @if (!string.IsNullOrWhiteSpace(thumbnailUrl))
+                        {
+                            <img class="card-img-top recent-project-thumbnail"
+                                 src="@thumbnailUrl"
+                                 alt=""
+                                 loading="lazy" />
+                        }
+                        else
+                        {
+                            <div class="recent-project-thumbnail recent-project-thumbnail-placeholder"></div>
+                        }
+                    </a>
+                    <div class="card-body">
+                        <h2 class="h6 card-title mb-2">
+                            <a href="@project.SourceUrl"
+                               target="_blank"
+                               rel="noopener"
+                               class="text-reset text-decoration-none">@project.Title</a>
+                        </h2>
+                        @if (!string.IsNullOrWhiteSpace(project.ChannelName))
+                        {
+                            <div class="small text-secondary text-truncate">@project.ChannelName</div>
+                        }
+                    </div>
+                    <div class="card-footer small text-secondary bg-transparent border-0 pt-0">
+                        @project.CompletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                    </div>
+                </article>
+            </div>
+        }
+    </div>
+}

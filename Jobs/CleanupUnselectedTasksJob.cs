@@ -2,6 +2,7 @@ using HoloScoop.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Quartz;
+using MediaTaskStatus = HoloScoop.Data.Entities.TaskStatus;
 
 namespace HoloScoop.Jobs;
 
@@ -15,28 +16,45 @@ public sealed class CleanupUnselectedTasksJob(
 
     public async Task Execute(IJobExecutionContext context)
     {
-        var cutoff = DateTimeOffset.UtcNow.AddDays(-_options.UnselectedRetentionDays);
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(
-            context.CancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var unselectedCutoff = now.AddDays(-_options.UnselectedRetentionDays);
+        var completedCutoff = now.AddDays(-_options.CompletedRetentionDays);
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        var (deletedUnselectedTasks, deletedCompletedTasks, deletedStreams) =
+            await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(
+                context.CancellationToken);
 
-        var deletedTasks = await dbContext.Tasks
-            .Where(task => task.DownloadMode == null && task.CreatedAt < cutoff)
-            .ExecuteDeleteAsync(context.CancellationToken);
+            var unselectedTaskCount = await dbContext.Tasks
+                .Where(task => task.DownloadMode == null && task.CreatedAt < unselectedCutoff)
+                .ExecuteDeleteAsync(context.CancellationToken);
 
-        var deletedStreams = await dbContext.Streams
-            .Where(stream => stream.CreatedAt < cutoff &&
-                             !stream.Tasks.Any() &&
-                             !stream.SubtitleSegments.Any())
-            .ExecuteDeleteAsync(context.CancellationToken);
+            var completedTaskCount = await dbContext.Tasks
+                .Where(task => task.Status == MediaTaskStatus.Completed &&
+                               task.UpdatedAt < completedCutoff)
+                .ExecuteDeleteAsync(context.CancellationToken);
 
-        await transaction.CommitAsync(context.CancellationToken);
+            var streamCount = await dbContext.Streams
+                .Where(stream => stream.CreatedAt < unselectedCutoff &&
+                                 !stream.Tasks.Any() &&
+                                 !stream.SubtitleSegments.Any())
+                .ExecuteDeleteAsync(context.CancellationToken);
 
-        if (deletedTasks > 0 || deletedStreams > 0)
+            await transaction.CommitAsync(context.CancellationToken);
+            return (unselectedTaskCount, completedTaskCount, streamCount);
+        });
+
+        if (deletedUnselectedTasks > 0 || deletedCompletedTasks > 0 || deletedStreams > 0)
         {
             logger.LogInformation(
-                "Deleted {TaskCount} unselected tasks older than {RetentionDays} days and {StreamCount} orphan streams.",
-                deletedTasks,
+                "Deleted {UnselectedTaskCount} unselected tasks older than {UnselectedRetentionDays} days, " +
+                "{CompletedTaskCount} completed tasks older than {CompletedRetentionDays} days, and " +
+                "{StreamCount} orphan streams.",
+                deletedUnselectedTasks,
                 _options.UnselectedRetentionDays,
+                deletedCompletedTasks,
+                _options.CompletedRetentionDays,
                 deletedStreams);
         }
     }

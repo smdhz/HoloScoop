@@ -30,7 +30,7 @@ public interface IMediaDownloader
 public sealed class MediaDownloadException : Exception
 {
     public MediaDownloadException(string message, int? exitCode = null, string? standardError = null)
-        : base(message)
+        : base(IncludeStandardError(message, standardError))
     {
         ExitCode = exitCode;
         StandardError = standardError;
@@ -38,4 +38,14 @@ public sealed class MediaDownloadException : Exception
 
     public int? ExitCode { get; }
     public string? StandardError { get; }
+
+    private static string IncludeStandardError(string message, string? standardError)
+    {
+        if (string.IsNullOrWhiteSpace(standardError))
+        {
+            return message;
+        }
+
+        return $"{message}{Environment.NewLine}{Environment.NewLine}yt-dlp stderr:{Environment.NewLine}{standardError.Trim()}";
+    }
 }
