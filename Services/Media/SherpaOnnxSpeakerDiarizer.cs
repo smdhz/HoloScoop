@@ -55,6 +55,7 @@ public sealed class SherpaOnnxSpeakerDiarizer(
                 $"Diarization audio must be {diarizer.SampleRate} Hz, but was {wave.SampleRate} Hz.");
         }
 
+        var lastReportedPercent = -5;
         var callback = new OfflineSpeakerDiarizationProgressCallback(
             (processed, total, _) =>
             {
@@ -63,12 +64,17 @@ public sealed class SherpaOnnxSpeakerDiarizer(
                     return 1;
                 }
 
-                if (processed == total || processed % 25 == 0)
+                var percent = total > 0
+                    ? (int)Math.Clamp((long)processed * 100 / total, 0, 100)
+                    : 0;
+                if (processed == total || percent >= lastReportedPercent + 5)
                 {
                     logger.LogInformation(
-                        "Speaker diarization progress: {Processed}/{Total} chunks",
+                        "Speaker diarization progress: {Percent}% ({Processed}/{Total} chunks)",
+                        percent,
                         processed,
                         total);
+                    lastReportedPercent = percent;
                 }
                 return 0;
             });

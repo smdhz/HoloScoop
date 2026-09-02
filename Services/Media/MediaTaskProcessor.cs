@@ -120,6 +120,9 @@ public sealed class MediaTaskProcessor(
         await dbContext.SpeakerTurns
             .Where(turn => turn.StreamId == task.StreamId)
             .ExecuteDeleteAsync(cancellationToken);
+        await dbContext.SpeakerClusterEmbeddings
+            .Where(embedding => embedding.StreamId == task.StreamId)
+            .ExecuteDeleteAsync(cancellationToken);
         if (_diarizationOptions.Enabled)
         {
             var turns = await speakerDiarizer.DiarizeAsync(
@@ -134,6 +137,16 @@ public sealed class MediaTaskProcessor(
 
             var embeddings = await speakerEmbeddingService.ExtractAsync(
                 result.DiarizationAudioPath, turns, cancellationToken);
+            foreach (var (label, embedding) in embeddings)
+            {
+                dbContext.SpeakerClusterEmbeddings.Add(new SpeakerClusterEmbedding
+                {
+                    StreamId = task.StreamId,
+                    SpeakerLabel = label,
+                    Embedding = ToBytes(embedding),
+                    Dimension = embedding.Length
+                });
+            }
             var suggestions = speakerCount > 1
                 ? await MatchVoiceProfilesAsync(embeddings, speakerNames, cancellationToken)
                 : new Dictionary<string, VoiceSuggestion>(StringComparer.Ordinal);

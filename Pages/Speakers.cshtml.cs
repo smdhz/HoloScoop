@@ -1,5 +1,6 @@
 using HoloScoop.Data;
 using HoloScoop.Search;
+using HoloScoop.Services.Media;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
@@ -12,14 +13,19 @@ public sealed record SpeakerMappingRow(
     string? SuggestedName,
     double? SuggestedScore,
     int TurnCount,
-    int SubtitleCount);
+    int SubtitleCount,
+    IReadOnlyList<SpeakerSample> Samples);
+
+public sealed record SpeakerSample(long StartMs, long EndMs, string? Text);
 
 public sealed class SpeakersModel(
     HoloScoopDbContext dbContext,
-    ISubtitleSearchService searchService) : PageModel
+    ISubtitleSearchService searchService,
+    ILocalMediaLibrary mediaLibrary) : PageModel
 {
     public long StreamId { get; private set; }
     public string Title { get; private set; } = string.Empty;
+    public bool HasLocalVideo { get; private set; }
     public IReadOnlyList<SpeakerMappingRow> Speakers { get; private set; } = [];
 
     [TempData]
@@ -30,7 +36,7 @@ public sealed class SpeakersModel(
         var stream = await dbContext.Streams
             .AsNoTracking()
             .Where(item => item.Id == streamId)
-            .Select(item => new { item.Id, item.Title })
+            .Select(item => new { item.Id, item.ExternalId, item.Title })
             .SingleOrDefaultAsync(cancellationToken);
         if (stream is null)
         {
@@ -39,43 +45,103 @@ public sealed class SpeakersModel(
 
         StreamId = stream.Id;
         Title = stream.Title;
+        HasLocalVideo = mediaLibrary.FindVideo(stream.ExternalId) is not null;
         var turns = await dbContext.SpeakerTurns
             .AsNoTracking()
             .Where(turn => turn.StreamId == streamId)
-            .GroupBy(turn => new
+            .Select(turn => new
             {
                 turn.SpeakerLabel,
                 turn.SpeakerName,
                 turn.SuggestedSpeakerName,
-                turn.SuggestedSpeakerScore
+                turn.SuggestedSpeakerScore,
+                turn.StartMs,
+                turn.EndMs
             })
-            .Select(group => new
-            {
-                Label = group.Key.SpeakerLabel,
-                Name = group.Key.SpeakerName,
-                SuggestedName = group.Key.SuggestedSpeakerName,
-                SuggestedScore = group.Key.SuggestedSpeakerScore,
-                Count = group.Count()
-            })
-            .OrderBy(item => item.Label)
             .ToListAsync(cancellationToken);
-        var subtitleCounts = await dbContext.SubtitleSegments
+        var subtitles = await dbContext.SubtitleSegments
             .AsNoTracking()
             .Where(segment => segment.StreamId == streamId && segment.SpeakerLabel != null)
-            .GroupBy(segment => segment.SpeakerLabel!)
-            .Select(group => new { Label = group.Key, Count = group.Count() })
-            .ToDictionaryAsync(item => item.Label, item => item.Count, cancellationToken);
+            .Select(segment => new SubtitleSample(
+                segment.SpeakerLabel!, segment.StartMs, segment.EndMs, segment.Text))
+            .ToListAsync(cancellationToken);
+        var subtitlesByLabel = subtitles
+            .GroupBy(segment => segment.Label)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
         Speakers = turns
-            .Select(turn => new SpeakerMappingRow(
-                turn.Label,
-                turn.Name,
-                turn.SuggestedName,
-                turn.SuggestedScore,
-                turn.Count,
-                subtitleCounts.GetValueOrDefault(turn.Label)))
+            .GroupBy(turn => turn.SpeakerLabel)
+            .OrderBy(group => group.Key)
+            .Select(group =>
+            {
+                var first = group.First();
+                var labelSubtitles = subtitlesByLabel.GetValueOrDefault(group.Key) ?? [];
+                var samples = PickSamples(group
+                    .Select(turn => (turn.StartMs, turn.EndMs))
+                    .ToArray())
+                    .Select(turn => new SpeakerSample(
+                        turn.StartMs,
+                        turn.EndMs,
+                        FindSampleText(turn.StartMs, turn.EndMs, labelSubtitles)))
+                    .ToArray();
+                return new SpeakerMappingRow(
+                    group.Key,
+                    first.SpeakerName,
+                    first.SuggestedSpeakerName,
+                    first.SuggestedSpeakerScore,
+                    group.Count(),
+                    labelSubtitles.Length,
+                    samples);
+            })
             .ToArray();
         return Page();
     }
+
+    private static IReadOnlyList<(long StartMs, long EndMs)> PickSamples(
+        IReadOnlyCollection<(long StartMs, long EndMs)> turns)
+    {
+        var candidates = turns
+            .Where(turn => turn.EndMs - turn.StartMs is >= 2_000 and <= 15_000)
+            .OrderByDescending(turn => turn.EndMs - turn.StartMs)
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            candidates = turns.OrderByDescending(turn => turn.EndMs - turn.StartMs).ToList();
+        }
+
+        var selected = new List<(long StartMs, long EndMs)>();
+        foreach (var candidate in candidates)
+        {
+            if (selected.All(sample => Math.Abs(sample.StartMs - candidate.StartMs) >= 30_000))
+            {
+                selected.Add(candidate);
+                if (selected.Count == 3) break;
+            }
+        }
+        return selected.OrderBy(turn => turn.StartMs).ToArray();
+    }
+
+    private static string? FindSampleText(
+        long startMs,
+        long endMs,
+        IEnumerable<SubtitleSample> subtitles)
+    {
+        return subtitles
+            .Select(subtitle => new
+            {
+                subtitle.Text,
+                Overlap = Math.Max(0, Math.Min(endMs, subtitle.EndMs) - Math.Max(startMs, subtitle.StartMs))
+            })
+            .Where(item => item.Overlap > 0)
+            .OrderByDescending(item => item.Overlap)
+            .ThenByDescending(item => item.Text.Length)
+            .Select(item => item.Text)
+            .FirstOrDefault();
+    }
+
+    public static string FormatTime(long milliseconds) =>
+        TimeSpan.FromMilliseconds(milliseconds).ToString(@"hh\:mm\:ss");
+
+    private sealed record SubtitleSample(string Label, long StartMs, long EndMs, string Text);
 
     public async Task<IActionResult> OnPostMapAsync(
         long streamId,
@@ -107,11 +173,48 @@ public sealed class SpeakersModel(
         await dbContext.SubtitleSegments
             .Where(segment => segment.StreamId == streamId && segment.SpeakerLabel == label)
             .ExecuteUpdateAsync(update => update.SetProperty(segment => segment.SpeakerName, name), cancellationToken);
+        if (name is not null)
+        {
+            await CreateVoiceProfileIfMissingAsync(streamId, label, name, cancellationToken);
+        }
         await ReindexStreamAsync(streamId, cancellationToken);
         StatusMessage = name is null
             ? $"已清除 {label} 的姓名映射。"
             : $"已将 {label} 映射为 {name}。";
         return RedirectToPage(new { streamId });
+    }
+
+    private async Task CreateVoiceProfileIfMissingAsync(
+        long streamId,
+        string label,
+        string memberName,
+        CancellationToken cancellationToken)
+    {
+        if (await dbContext.VoiceProfiles.AnyAsync(
+                profile => profile.MemberName == memberName, cancellationToken))
+        {
+            return;
+        }
+
+        var cluster = await dbContext.SpeakerClusterEmbeddings
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                embedding => embedding.StreamId == streamId && embedding.SpeakerLabel == label,
+                cancellationToken);
+        if (cluster is null)
+        {
+            return;
+        }
+
+        dbContext.VoiceProfiles.Add(new Data.Entities.VoiceProfile
+        {
+            MemberName = memberName,
+            Embedding = cluster.Embedding,
+            Dimension = cluster.Dimension,
+            SampleCount = 1,
+            SourceStreamId = streamId
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task ReindexStreamAsync(long streamId, CancellationToken cancellationToken)

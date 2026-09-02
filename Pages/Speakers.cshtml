@@ -24,10 +24,22 @@
 }
 else
 {
+    @if (Model.HasLocalVideo)
+    {
+        <div class="card card-body mb-3">
+            <div class="small text-secondary mb-2">点击下面的样本会从对应时间播放；样本结束时自动暂停。</div>
+            <video id="speaker-sample-player" class="w-100" style="max-height: 18rem; background: #000" controls playsinline preload="metadata"
+                   src="/api/streams/@Model.StreamId/video"></video>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-warning">本地没有视频，暂时无法试听说话人样本。</div>
+    }
     <div class="table-responsive">
         <table class="table align-middle">
             <thead>
-                <tr><th>标签</th><th>发言段</th><th>已归属字幕</th><th>成员姓名</th></tr>
+                <tr><th>标签</th><th>发言段</th><th>已归属字幕</th><th style="min-width: 24rem">试听样本</th><th>成员姓名</th></tr>
             </thead>
             <tbody>
             @foreach (var speaker in Model.Speakers)
@@ -36,6 +48,25 @@ else
                     <td><code>@speaker.Label</code></td>
                     <td>@speaker.TurnCount</td>
                     <td>@speaker.SubtitleCount</td>
+                    <td>
+                        <div class="vstack gap-2">
+                            @foreach (var sample in speaker.Samples)
+                            {
+                                <div>
+                                    <button type="button" class="btn btn-sm btn-outline-primary speaker-sample"
+                                            disabled="@(!Model.HasLocalVideo)"
+                                            data-start="@(sample.StartMs / 1000d)"
+                                            data-end="@(sample.EndMs / 1000d)">
+                                        ▶ @SpeakersModel.FormatTime(sample.StartMs)
+                                    </button>
+                                    @if (!string.IsNullOrWhiteSpace(sample.Text))
+                                    {
+                                        <span class="small ms-2">@sample.Text</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </td>
                     <td>
                         <form method="post" asp-page-handler="Map" class="d-flex align-items-start gap-2">
                             <input type="hidden" name="streamId" value="@Model.StreamId" />
@@ -62,4 +93,43 @@ else
             </tbody>
         </table>
     </div>
+}
+
+@section Scripts {
+    <script>
+        (() => {
+            const player = document.getElementById('speaker-sample-player');
+            if (!player) return;
+
+            let stopAt = null;
+            player.addEventListener('timeupdate', () => {
+                if (stopAt !== null && player.currentTime >= stopAt) {
+                    player.pause();
+                    stopAt = null;
+                }
+            });
+
+            document.querySelectorAll('.speaker-sample').forEach(button => {
+                button.addEventListener('click', async () => {
+                    const start = Number(button.dataset.start);
+                    const end = Number(button.dataset.end);
+                    if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+
+                    const beginPlayback = async () => {
+                        player.currentTime = start;
+                        stopAt = end;
+                        player.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        await player.play();
+                    };
+
+                    if (player.readyState >= HTMLMediaElement.HAVE_METADATA) {
+                        await beginPlayback();
+                    } else {
+                        player.addEventListener('loadedmetadata', beginPlayback, { once: true });
+                        player.load();
+                    }
+                });
+            });
+        })();
+    </script>
 }

@@ -12,6 +12,7 @@ public sealed class HoloScoopDbContext(DbContextOptions<HoloScoopDbContext> opti
     public DbSet<SubtitleSegment> SubtitleSegments => Set<SubtitleSegment>();
     public DbSet<SpeakerTurn> SpeakerTurns => Set<SpeakerTurn>();
     public DbSet<VoiceProfile> VoiceProfiles => Set<VoiceProfile>();
+    public DbSet<SpeakerClusterEmbedding> SpeakerClusterEmbeddings => Set<SpeakerClusterEmbedding>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -88,6 +89,14 @@ public sealed class HoloScoopDbContext(DbContextOptions<HoloScoopDbContext> opti
             if (entry.State is EntityState.Added or EntityState.Modified)
             {
                 entry.Entity.UpdatedAt = now;
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<SpeakerClusterEmbedding>())
+        {
+            if (entry.State == EntityState.Added)
+            {
+                entry.Entity.CreatedAt = now;
             }
         }
     }

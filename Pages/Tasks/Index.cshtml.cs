@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using System.Text.Json;
 using MediaTaskStatus = HoloScoop.Data.Entities.TaskStatus;
 
 namespace HoloScoop.Pages.Tasks;
@@ -98,7 +97,6 @@ public sealed class IndexModel(
         DownloadMode mode,
         string speakerChoice,
         int? multipleSpeakerCount,
-        string? speakerNames,
         string rowVersion,
         CancellationToken cancellationToken)
     {
@@ -114,22 +112,6 @@ public sealed class IndexModel(
             return RedirectToPage();
         }
 
-        var names = (speakerNames ?? string.Empty)
-            .Split([',', '，', '、', ';', '；', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        if (speakerCount > 1 && (names.Length > speakerCount || names.Any(name => name.Length > 256)))
-        {
-            StatusMessage = "候选成员不能多于说话人数，且每个姓名不能超过 256 个字符。";
-            return RedirectToPage();
-        }
-        var speakerNamesJson = JsonSerializer.Serialize(names);
-        if (speakerNamesJson.Length > 2000)
-        {
-            StatusMessage = "候选成员列表过长。";
-            return RedirectToPage();
-        }
-
         byte[] expectedVersion;
         try
         {
@@ -141,7 +123,7 @@ public sealed class IndexModel(
         }
 
         var result = await taskCommands.QueueAsync(
-            id, mode, speakerCount, speakerNamesJson, expectedVersion, DateTimeOffset.UtcNow, cancellationToken);
+            id, mode, speakerCount, expectedVersion, DateTimeOffset.UtcNow, cancellationToken);
         StatusMessage = result switch
         {
             QueueTaskResult.Queued when mode == DownloadMode.SubtitlesOnly => "已加入仅字幕下载队列。",

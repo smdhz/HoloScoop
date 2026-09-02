@@ -122,8 +122,10 @@ IF NOT EXISTS
       AND name = N'CK_Tasks_SpeakerCount'
 )
 BEGIN
-    ALTER TABLE dbo.Tasks WITH CHECK ADD CONSTRAINT CK_Tasks_SpeakerCount CHECK
-        (SpeakerCount IS NULL OR (SpeakerCount >= 1 AND SpeakerCount <= 20));
+    EXEC(N'
+        ALTER TABLE dbo.Tasks WITH CHECK ADD CONSTRAINT CK_Tasks_SpeakerCount CHECK
+            (SpeakerCount IS NULL OR (SpeakerCount >= 1 AND SpeakerCount <= 20));
+    ');
 END;
 
 IF EXISTS
@@ -315,6 +317,36 @@ IF NOT EXISTS
 BEGIN
     CREATE INDEX IX_SpeakerTurns_StreamId_SpeakerLabel
         ON dbo.SpeakerTurns (StreamId, SpeakerLabel);
+END;
+
+IF OBJECT_ID(N'dbo.SpeakerClusterEmbeddings', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.SpeakerClusterEmbeddings
+    (
+        Id           bigint IDENTITY(1, 1) NOT NULL,
+        StreamId     bigint                 NOT NULL,
+        SpeakerLabel nvarchar(64)           NOT NULL,
+        Embedding    varbinary(max)         NOT NULL,
+        Dimension    int                    NOT NULL,
+        CreatedAt    datetimeoffset(3)      NOT NULL
+            CONSTRAINT DF_SpeakerClusterEmbeddings_CreatedAt DEFAULT SYSUTCDATETIME(),
+
+        CONSTRAINT PK_SpeakerClusterEmbeddings PRIMARY KEY CLUSTERED (Id),
+        CONSTRAINT FK_SpeakerClusterEmbeddings_Streams_StreamId FOREIGN KEY (StreamId)
+            REFERENCES dbo.Streams (Id) ON DELETE CASCADE,
+        CONSTRAINT CK_SpeakerClusterEmbeddings_Dimension CHECK (Dimension > 0)
+    );
+END;
+
+IF NOT EXISTS
+(
+    SELECT 1 FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.SpeakerClusterEmbeddings')
+      AND name = N'UX_SpeakerClusterEmbeddings_StreamId_SpeakerLabel'
+)
+BEGIN
+    CREATE UNIQUE INDEX UX_SpeakerClusterEmbeddings_StreamId_SpeakerLabel
+        ON dbo.SpeakerClusterEmbeddings (StreamId, SpeakerLabel);
 END;
 
 IF OBJECT_ID(N'dbo.VoiceProfiles', N'U') IS NULL

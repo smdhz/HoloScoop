@@ -20,7 +20,6 @@ public interface ITaskCommands
         long taskId,
         DownloadMode downloadMode,
         int speakerCount,
-        string speakerNamesJson,
         byte[] expectedRowVersion,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
@@ -36,7 +35,6 @@ public sealed class TaskCommands(HoloScoopDbContext dbContext) : ITaskCommands
         long taskId,
         DownloadMode downloadMode,
         int speakerCount,
-        string speakerNamesJson,
         byte[] expectedRowVersion,
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
@@ -89,7 +87,7 @@ public sealed class TaskCommands(HoloScoopDbContext dbContext) : ITaskCommands
         }
         else
         {
-            task.SpeakerNamesJson = speakerNamesJson;
+            task.SpeakerNamesJson = "[]";
         }
         task.Status = Entities.TaskStatus.Queued;
         task.LastError = null;
