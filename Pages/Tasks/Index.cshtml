@@ -146,6 +146,12 @@ else
                             <button class="btn btn-sm btn-outline-danger" type="submit">重试</button>
                         </form>
                     }
+                    else if (task.Status == HoloScoop.Data.Entities.TaskStatus.Completed)
+                    {
+                        <a class="btn btn-sm btn-outline-primary"
+                           asp-page="/Speakers"
+                           asp-route-streamId="@task.StreamId">说话人</a>
+                    }
                 </td>
             </tr>
         }

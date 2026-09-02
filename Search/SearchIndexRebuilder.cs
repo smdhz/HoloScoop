@@ -40,7 +40,9 @@ public sealed class SearchIndexRebuilder(
                     segment.Sequence,
                     segment.StartMs,
                     segment.EndMs,
-                    segment.Text))
+                    segment.Text,
+                    segment.SpeakerLabel,
+                    segment.SpeakerName))
                 .Take(batchSize)
                 .ToListAsync(cancellationToken);
 

@@ -12,10 +12,14 @@ public sealed class MediaTaskProcessor(
     HoloScoopDbContext dbContext,
     IMediaDownloader downloader,
     ISubtitleParser subtitleParser,
+    ISpeakerDiarizer speakerDiarizer,
     ISubtitleSearchService searchService,
-    IOptions<MediaProcessingOptions> options) : IMediaTaskProcessor
+    IOptions<MediaProcessingOptions> options,
+    IOptions<SpeakerDiarizationOptions> diarizationOptions,
+    ILogger<MediaTaskProcessor> logger) : IMediaTaskProcessor
 {
     private readonly MediaProcessingOptions _options = options.Value;
+    private readonly SpeakerDiarizationOptions _diarizationOptions = diarizationOptions.Value;
 
     public async Task ProcessAsync(long taskId, CancellationToken cancellationToken)
     {
@@ -101,6 +105,41 @@ public sealed class MediaTaskProcessor(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        task.Status = TaskStatus.Diarizing;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        await dbContext.SpeakerTurns
+            .Where(turn => turn.StreamId == task.StreamId)
+            .ExecuteDeleteAsync(cancellationToken);
+        if (_diarizationOptions.Enabled)
+        {
+            var turns = await speakerDiarizer.DiarizeAsync(
+                result.DiarizationAudioPath,
+                cancellationToken);
+            if (turns.Count == 0)
+            {
+                throw new MediaDownloadException(
+                    $"Speaker diarization found no speech for media {task.Stream.ExternalId}.");
+            }
+
+            foreach (var turn in turns)
+            {
+                dbContext.SpeakerTurns.Add(new SpeakerTurn
+                {
+                    StreamId = task.StreamId,
+                    SpeakerLabel = turn.SpeakerLabel,
+                    StartMs = turn.StartMs,
+                    EndMs = turn.EndMs
+                });
+            }
+
+            var segments = await dbContext.SubtitleSegments
+                .Where(segment => segment.StreamId == task.StreamId)
+                .ToListAsync(cancellationToken);
+            AssignSpeakerLabels(segments, turns, _diarizationOptions.MinimumSubtitleOverlapRatio);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
         task.Status = TaskStatus.Indexing;
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -120,13 +159,77 @@ public sealed class MediaTaskProcessor(
                 segment.Sequence,
                 segment.StartMs,
                 segment.EndMs,
-                segment.Text))
+                segment.Text,
+                segment.SpeakerLabel,
+                segment.SpeakerName))
             .ToListAsync(cancellationToken);
         await searchService.ReplaceStreamAsync(task.StreamId, documents, cancellationToken);
 
         task.Status = TaskStatus.Completed;
         task.LastError = null;
         await dbContext.SaveChangesAsync(cancellationToken);
+        CleanupWorkDirectory(task.Id, logger);
+    }
+
+    internal static void AssignSpeakerLabels(
+        IReadOnlyCollection<SubtitleSegment> segments,
+        IReadOnlyCollection<DiarizedSpeakerTurn> turns,
+        double minimumOverlapRatio)
+    {
+        foreach (var segment in segments)
+        {
+            segment.SpeakerLabel = null;
+            segment.SpeakerName = null;
+            var duration = Math.Max(1, segment.EndMs - segment.StartMs);
+            var overlaps = turns
+                .Select(turn => new
+                {
+                    turn.SpeakerLabel,
+                    Duration = Math.Max(
+                        0,
+                        Math.Min(segment.EndMs, turn.EndMs) -
+                        Math.Max(segment.StartMs, turn.StartMs))
+                })
+                .Where(item => item.Duration > 0)
+                .GroupBy(item => item.SpeakerLabel)
+                .Select(group => new
+                {
+                    SpeakerLabel = group.Key,
+                    Duration = group.Sum(item => item.Duration)
+                })
+                .OrderByDescending(item => item.Duration)
+                .ToArray();
+            if (overlaps.Length == 0 || overlaps[0].Duration / (double)duration < minimumOverlapRatio)
+            {
+                continue;
+            }
+
+            if (overlaps.Length > 1 && overlaps[0].Duration <= overlaps[1].Duration)
+            {
+                continue;
+            }
+
+            segment.SpeakerLabel = overlaps[0].SpeakerLabel;
+        }
+    }
+
+    private void CleanupWorkDirectory(long taskId, ILogger logger)
+    {
+        var workDirectory = SafeMediaPath.UnderRoot(_options.WorkRoot, taskId.ToString());
+        try
+        {
+            if (Directory.Exists(workDirectory))
+            {
+                Directory.Delete(workDirectory, recursive: true);
+            }
+        }
+        catch (IOException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Could not remove completed task work directory {WorkDirectory}",
+                workDirectory);
+        }
     }
 
     private string ResolveLibraryPath(string relativePath)

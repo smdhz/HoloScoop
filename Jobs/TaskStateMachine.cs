@@ -22,11 +22,13 @@ public sealed class TaskStateMachine(HoloScoopDbContext dbContext) : ITaskStateM
         (MediaTaskStatus.PendingSelection, MediaTaskStatus.Expired),
         (MediaTaskStatus.Queued, MediaTaskStatus.Downloading),
         (MediaTaskStatus.Downloading, MediaTaskStatus.ParsingSubtitles),
-        (MediaTaskStatus.ParsingSubtitles, MediaTaskStatus.Indexing),
+        (MediaTaskStatus.ParsingSubtitles, MediaTaskStatus.Diarizing),
+        (MediaTaskStatus.Diarizing, MediaTaskStatus.Indexing),
         (MediaTaskStatus.Indexing, MediaTaskStatus.Completed),
         (MediaTaskStatus.Queued, MediaTaskStatus.Failed),
         (MediaTaskStatus.Downloading, MediaTaskStatus.Failed),
         (MediaTaskStatus.ParsingSubtitles, MediaTaskStatus.Failed),
+        (MediaTaskStatus.Diarizing, MediaTaskStatus.Failed),
         (MediaTaskStatus.Indexing, MediaTaskStatus.Failed),
         (MediaTaskStatus.Failed, MediaTaskStatus.Queued)
     ];

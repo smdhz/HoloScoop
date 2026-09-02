@@ -5,6 +5,7 @@ public sealed class MediaProcessingOptions
     public const string SectionName = "Media";
 
     public string YtDlpPath { get; set; } = "yt-dlp";
+    public string FfmpegPath { get; set; } = "ffmpeg";
     public string LibraryRoot { get; set; } = "/data/library";
     public string WorkRoot { get; set; } = "/data/work";
     public string LibraryPath { get => LibraryRoot; set => LibraryRoot = value; }

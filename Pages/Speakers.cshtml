@@ -1,0 +1,52 @@
+@page "/Speakers/{streamId:long}"
+@model HoloScoop.Pages.SpeakersModel
+@{
+    ViewData["Title"] = "说话人映射";
+}
+
+<div class="mb-3">
+    <a class="text-decoration-none" asp-page="/Tasks/Index">← 返回任务管理</a>
+</div>
+
+<div class="mb-4">
+    <h1 class="h4 mb-1">说话人映射</h1>
+    <p class="text-secondary mb-0">@Model.Title</p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-info" role="status">@Model.StatusMessage</div>
+}
+
+@if (Model.Speakers.Count == 0)
+{
+    <div class="empty-state">这场直播还没有说话人分离结果。</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr><th>标签</th><th>发言段</th><th>已归属字幕</th><th>成员姓名</th></tr>
+            </thead>
+            <tbody>
+            @foreach (var speaker in Model.Speakers)
+            {
+                <tr>
+                    <td><code>@speaker.Label</code></td>
+                    <td>@speaker.TurnCount</td>
+                    <td>@speaker.SubtitleCount</td>
+                    <td>
+                        <form method="post" asp-page-handler="Map" class="d-flex gap-2">
+                            <input type="hidden" name="streamId" value="@Model.StreamId" />
+                            <input type="hidden" name="label" value="@speaker.Label" />
+                            <input class="form-control" name="name" value="@speaker.Name" maxlength="256" placeholder="例如：星街すいせい" />
+                            <button class="btn btn-primary text-nowrap" type="submit">保存</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

@@ -18,7 +18,8 @@ public sealed record MediaDownloadResult(
     string? MetadataRelativePath,
     IReadOnlyList<DownloadedSubtitle> Subtitles,
     IReadOnlyList<string> VideoRelativePaths,
-    IReadOnlyList<string> ThumbnailRelativePaths);
+    IReadOnlyList<string> ThumbnailRelativePaths,
+    string DiarizationAudioPath);
 
 public interface IMediaDownloader
 {
@@ -46,6 +47,6 @@ public sealed class MediaDownloadException : Exception
             return message;
         }
 
-        return $"{message}{Environment.NewLine}{Environment.NewLine}yt-dlp stderr:{Environment.NewLine}{standardError.Trim()}";
+        return $"{message}{Environment.NewLine}{Environment.NewLine}process stderr:{Environment.NewLine}{standardError.Trim()}";
     }
 }

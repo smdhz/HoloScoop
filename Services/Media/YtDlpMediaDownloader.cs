@@ -18,6 +18,11 @@ public sealed class YtDlpMediaDownloader(
     {
         ".jpg", ".jpeg", ".png", ".webp"
     };
+    private static readonly HashSet<string> MediaExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".aac", ".flac", ".m4a", ".mka", ".mp3", ".mp4", ".mkv", ".mov", ".ogg",
+        ".opus", ".wav", ".webm"
+    };
 
     private readonly MediaProcessingOptions _options = options.Value;
 
@@ -99,14 +104,17 @@ public sealed class YtDlpMediaDownloader(
             throw new MediaDownloadException($"Unable to launch yt-dlp at '{_options.YtDlpPath}': {exception.Message}");
         }
 
+        var diarizationAudioPath = await PrepareDiarizationAudioAsync(
+            workDirectory,
+            request,
+            timeout.Token);
         var result = await PromoteArtifactsAsync(
             workDirectory,
             libraryDirectory,
             externalId,
             request.TaskId,
             cancellationToken);
-        Directory.Delete(workDirectory, recursive: true);
-        return result;
+        return result with { DiarizationAudioPath = diarizationAudioPath };
     }
 
     private ProcessStartInfo BuildStartInfo(MediaDownloadRequest request, string workDirectory)
@@ -137,7 +145,7 @@ public sealed class YtDlpMediaDownloader(
 
         if (request.Mode == DownloadMode.SubtitlesOnly)
         {
-            info.ArgumentList.Add("--skip-download");
+            AddArguments(info, "--format", "ba/b");
         }
         else if (request.Mode == DownloadMode.VideoAndSubtitles)
         {
@@ -150,6 +158,80 @@ public sealed class YtDlpMediaDownloader(
 
         info.ArgumentList.Add(request.SourceUrl.AbsoluteUri);
         return info;
+    }
+
+    private async Task<string> PrepareDiarizationAudioAsync(
+        string workDirectory,
+        MediaDownloadRequest request,
+        CancellationToken cancellationToken)
+    {
+        var inputPath = Directory.EnumerateFiles(workDirectory, "*", SearchOption.TopDirectoryOnly)
+            .Where(path => MediaExtensions.Contains(Path.GetExtension(path)))
+            .OrderByDescending(path => new FileInfo(path).Length)
+            .FirstOrDefault()
+            ?? throw new MediaDownloadException(
+                $"yt-dlp returned no audio-bearing media for {request.ExternalId}.");
+        var outputPath = SafeMediaPath.UnderRoot(workDirectory, "diarization.wav");
+        var info = new ProcessStartInfo
+        {
+            FileName = _options.FfmpegPath,
+            WorkingDirectory = workDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        AddArguments(
+            info,
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel", "error",
+            "-y",
+            "-i", inputPath,
+            "-vn",
+            "-ac", "1",
+            "-ar", "16000",
+            "-c:a", "pcm_s16le",
+            outputPath);
+
+        using var process = new Process { StartInfo = info };
+        try
+        {
+            if (!process.Start())
+            {
+                throw new MediaDownloadException("ffmpeg could not be started.");
+            }
+
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+            await process.WaitForExitAsync(cancellationToken);
+            await stdoutTask;
+            var error = await stderrTask;
+            if (process.ExitCode != 0)
+            {
+                throw new MediaDownloadException(
+                    $"ffmpeg exited with code {process.ExitCode} while preparing diarization audio.",
+                    process.ExitCode,
+                    Truncate(error));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            KillProcess(process);
+            throw;
+        }
+        catch (System.ComponentModel.Win32Exception exception)
+        {
+            throw new MediaDownloadException(
+                $"Unable to launch ffmpeg at '{_options.FfmpegPath}': {exception.Message}");
+        }
+
+        if (request.Mode == DownloadMode.SubtitlesOnly)
+        {
+            File.Delete(inputPath);
+        }
+
+        return outputPath;
     }
 
     private static void AddArguments(ProcessStartInfo info, params string[] arguments)
@@ -252,7 +334,13 @@ public sealed class YtDlpMediaDownloader(
             videos.Count,
             subtitles.Count,
             thumbnails.Count);
-        return new MediaDownloadResult(externalId, metadata, subtitles, videos, thumbnails);
+        return new MediaDownloadResult(
+            externalId,
+            metadata,
+            subtitles,
+            videos,
+            thumbnails,
+            string.Empty);
     }
 
     private async Task CopyWithProgressAsync(

@@ -19,6 +19,9 @@ public sealed class IndexModel(
     [BindProperty(SupportsGet = true)]
     public string? Language { get; set; }
 
+    [BindProperty(SupportsGet = true)]
+    public string? Speaker { get; set; }
+
     public SubtitleSearchResult? Result { get; private set; }
     public string? ErrorMessage { get; private set; }
     public IReadOnlySet<long> LocalVideoStreamIds { get; private set; } = new HashSet<long>();
@@ -34,7 +37,11 @@ public sealed class IndexModel(
 
         try
         {
-            Result = await searchService.SearchAsync(Query, Language, cancellationToken: cancellationToken);
+            Result = await searchService.SearchAsync(
+                Query,
+                Language,
+                Speaker,
+                cancellationToken: cancellationToken);
             var streamIds = Result.Hits.Select(hit => hit.StreamId).Distinct().ToArray();
             var streams = await dbContext.Streams
                 .AsNoTracking()

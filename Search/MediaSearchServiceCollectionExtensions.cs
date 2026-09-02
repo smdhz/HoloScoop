@@ -12,9 +12,21 @@ public static class MediaSearchServiceCollectionExtensions
         services.AddOptions<MediaProcessingOptions>()
             .Bind(configuration.GetSection(MediaProcessingOptions.SectionName))
             .Validate(options => !string.IsNullOrWhiteSpace(options.YtDlpPath), "Media:YtDlpPath is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.FfmpegPath), "Media:FfmpegPath is required.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.LibraryRoot), "Media:LibraryRoot is required.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.WorkRoot), "Media:WorkRoot is required.")
             .Validate(options => options.DownloadTimeout > TimeSpan.Zero, "Media:DownloadTimeout must be positive.")
+            .ValidateOnStart();
+
+        services.AddOptions<SpeakerDiarizationOptions>()
+            .Bind(configuration.GetSection(SpeakerDiarizationOptions.SectionName))
+            .Validate(options => options.NumThreads > 0, "SpeakerDiarization:NumThreads must be positive.")
+            .Validate(options => options.ExpectedSpeakerCount >= 0,
+                "SpeakerDiarization:ExpectedSpeakerCount cannot be negative.")
+            .Validate(options => options.ClusteringThreshold is > 0 and < 1,
+                "SpeakerDiarization:ClusteringThreshold must be between zero and one.")
+            .Validate(options => options.MinimumSubtitleOverlapRatio is > 0 and <= 1,
+                "SpeakerDiarization:MinimumSubtitleOverlapRatio must be between zero and one.")
             .ValidateOnStart();
 
         services.AddOptions<MeilisearchOptions>()
@@ -27,6 +39,7 @@ public static class MediaSearchServiceCollectionExtensions
             .ValidateOnStart();
 
         services.AddScoped<IMediaDownloader, YtDlpMediaDownloader>();
+        services.AddSingleton<ISpeakerDiarizer, SherpaOnnxSpeakerDiarizer>();
         services.AddSingleton<ILocalMediaLibrary, LocalMediaLibrary>();
         services.AddSingleton<ISubtitleParser, WebVttParser>();
         services.AddScoped<IMediaTaskProcessor, MediaTaskProcessor>();

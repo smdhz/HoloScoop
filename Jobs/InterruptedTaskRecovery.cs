@@ -15,6 +15,7 @@ public static class InterruptedTaskRecovery
             .Where(task =>
                 task.Status == MediaTaskStatus.Downloading ||
                 task.Status == MediaTaskStatus.ParsingSubtitles ||
+                task.Status == MediaTaskStatus.Diarizing ||
                 task.Status == MediaTaskStatus.Indexing)
             .ExecuteUpdateAsync(update => update
                 .SetProperty(task => task.Status, MediaTaskStatus.Queued)

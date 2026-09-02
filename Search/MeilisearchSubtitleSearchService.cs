@@ -69,6 +69,7 @@ public sealed class MeilisearchSubtitleSearchService : ISubtitleSearchService
     public async Task<SubtitleSearchResult> SearchAsync(
         string query,
         string? language = null,
+        string? speakerName = null,
         int offset = 0,
         int limit = 20,
         CancellationToken cancellationToken = default)
@@ -86,12 +87,21 @@ public sealed class MeilisearchSubtitleSearchService : ISubtitleSearchService
             ["attributesToRetrieve"] = new[]
             {
                 "id", "streamId", "title", "channelName", "sourceUrl", "language",
-                "source", "startMs", "endMs", "text"
+                "source", "startMs", "endMs", "text", "speakerLabel", "speakerName"
             }
         };
+        var filters = new List<string>();
         if (!string.IsNullOrWhiteSpace(language))
         {
-            request["filter"] = $"language = '{EscapeFilterValue(language)}'";
+            filters.Add($"language = '{EscapeFilterValue(language)}'");
+        }
+        if (!string.IsNullOrWhiteSpace(speakerName))
+        {
+            filters.Add($"speakerName = '{EscapeFilterValue(speakerName.Trim())}'");
+        }
+        if (filters.Count > 0)
+        {
+            request["filter"] = string.Join(" AND ", filters);
         }
 
         var response = await _httpClient.PostAsJsonAsync(
@@ -120,6 +130,14 @@ public sealed class MeilisearchSubtitleSearchService : ISubtitleSearchService
                 startMs,
                 hit.GetProperty("endMs").GetInt64(),
                 hit.GetProperty("text").GetString()!,
+                hit.TryGetProperty("speakerLabel", out var speakerLabel) &&
+                speakerLabel.ValueKind != JsonValueKind.Null
+                    ? speakerLabel.GetString()
+                    : null,
+                hit.TryGetProperty("speakerName", out var speakerNameNode) &&
+                speakerNameNode.ValueKind != JsonValueKind.Null
+                    ? speakerNameNode.GetString()
+                    : null,
                 YouTubeTimestampUrl.Create(sourceUrl, startMs)));
         }
 
@@ -173,8 +191,8 @@ public sealed class MeilisearchSubtitleSearchService : ISubtitleSearchService
                 $"indexes/{IndexName}/settings",
                 new
                 {
-                    searchableAttributes = new[] { "text", "title", "channelName" },
-                    filterableAttributes = new[] { "language", "source", "streamId" },
+                    searchableAttributes = new[] { "text", "title", "channelName", "speakerName" },
+                    filterableAttributes = new[] { "language", "source", "streamId", "speakerName" },
                     sortableAttributes = new[] { "startMs" }
                 },
                 cancellationToken);

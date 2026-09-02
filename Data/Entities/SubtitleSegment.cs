@@ -10,6 +10,8 @@ public sealed class SubtitleSegment
     public long StartMs { get; set; }
     public long EndMs { get; set; }
     public required string Text { get; set; }
+    public string? SpeakerLabel { get; set; }
+    public string? SpeakerName { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
     public Stream Stream { get; set; } = null!;

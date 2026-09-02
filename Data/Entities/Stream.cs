@@ -20,4 +20,5 @@ public sealed class Stream
 
     public ICollection<MediaTask> Tasks { get; } = new List<MediaTask>();
     public ICollection<SubtitleSegment> SubtitleSegments { get; } = new List<SubtitleSegment>();
+    public ICollection<SpeakerTurn> SpeakerTurns { get; } = new List<SpeakerTurn>();
 }

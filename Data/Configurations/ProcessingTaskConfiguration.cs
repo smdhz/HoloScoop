@@ -13,7 +13,7 @@ public sealed class ProcessingTaskConfiguration : IEntityTypeConfiguration<Media
             table.HasCheckConstraint("CK_Tasks_DownloadMode",
                 "[DownloadMode] IS NULL OR [DownloadMode] IN ('VideoAndSubtitles', 'SubtitlesOnly')");
             table.HasCheckConstraint("CK_Tasks_Status",
-                "[Status] IN ('PendingSelection', 'Queued', 'Downloading', 'ParsingSubtitles', 'Indexing', 'Completed', 'Failed', 'Expired')");
+                "[Status] IN ('PendingSelection', 'Queued', 'Downloading', 'ParsingSubtitles', 'Diarizing', 'Indexing', 'Completed', 'Failed', 'Expired')");
             table.HasCheckConstraint("CK_Tasks_AttemptCount", "[AttemptCount] >= 0");
         });
         builder.HasKey(x => x.Id).HasName("PK_Tasks");

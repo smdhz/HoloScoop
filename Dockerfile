@@ -21,14 +21,27 @@ COPY --from=deno /deno /usr/local/bin/deno
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         ca-certificates \
+        bzip2 \
+        curl \
         ffmpeg \
         python3 \
         python3-venv \
     && python3 -m venv /opt/yt-dlp \
     && /opt/yt-dlp/bin/pip install --no-cache-dir "yt-dlp[default,curl-cffi]" \
+    && mkdir -p /opt/sherpa-onnx \
+    && curl --fail --location --silent --show-error \
+        --output /tmp/sherpa-segmentation.tar.bz2 \
+        https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2 \
+    && echo "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488  /tmp/sherpa-segmentation.tar.bz2" | sha256sum --check \
+    && tar --extract --bzip2 --file /tmp/sherpa-segmentation.tar.bz2 --directory /opt/sherpa-onnx \
+    && mv /opt/sherpa-onnx/sherpa-onnx-pyannote-segmentation-3-0 /opt/sherpa-onnx/speaker-segmentation \
+    && curl --fail --location --silent --show-error \
+        --output /opt/sherpa-onnx/nemo_en_titanet_large.onnx \
+        https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_large.onnx \
+    && echo "d51abcf31717ef28162f26acb9d44dd4127c3d44c9b8624f699f3425daca8e77  /opt/sherpa-onnx/nemo_en_titanet_large.onnx" | sha256sum --check \
     && mkdir -p /data/media \
     && chown -R app:app /data \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /tmp/sherpa-segmentation.tar.bz2 /var/lib/apt/lists/*
 
 ENV PATH="/opt/yt-dlp/bin:${PATH}" \
     ASPNETCORE_URLS="http://+:8080"

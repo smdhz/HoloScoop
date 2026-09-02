@@ -26,6 +26,10 @@
             <input id="query" class="form-control" name="q" value="@Model.Query" placeholder="例如：重大告知" autofocus />
         </div>
         <div class="col-md-3">
+            <label class="visually-hidden" for="speaker">说话人</label>
+            <input id="speaker" class="form-control" name="speaker" value="@Model.Speaker" placeholder="说话人，例如：星街すいせい" />
+        </div>
+        <div class="col-md-2">
             <label class="visually-hidden" for="language">语言</label>
             <select id="language" class="form-select" name="language">
                 <option value="">所有语言</option>
@@ -63,6 +67,14 @@ else if (Model.Result is { } result)
                     </div>
                     <p class="mb-2">@hit.Text</p>
                     <div class="d-flex align-items-center gap-3 small text-secondary">
+                        @if (!string.IsNullOrWhiteSpace(hit.SpeakerName))
+                        {
+                            <span class="badge text-bg-primary">@hit.SpeakerName</span>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(hit.SpeakerLabel))
+                        {
+                            <span class="badge text-bg-light">@hit.SpeakerLabel</span>
+                        }
                         <span>@hit.ChannelName</span>
                         @if (Model.HasLocalVideo(hit.StreamId))
                         {

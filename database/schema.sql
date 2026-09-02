@@ -78,6 +78,7 @@ BEGIN
                 'Queued',
                 'Downloading',
                 'ParsingSubtitles',
+                'Diarizing',
                 'Indexing',
                 'Completed',
                 'Failed',
@@ -87,6 +88,33 @@ BEGIN
         CONSTRAINT CK_Tasks_AttemptCount CHECK (AttemptCount >= 0)
     );
 END;
+
+IF EXISTS
+(
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE parent_object_id = OBJECT_ID(N'dbo.Tasks')
+      AND name = N'CK_Tasks_Status'
+)
+BEGIN
+    ALTER TABLE dbo.Tasks DROP CONSTRAINT CK_Tasks_Status;
+END;
+
+ALTER TABLE dbo.Tasks WITH CHECK ADD CONSTRAINT CK_Tasks_Status CHECK
+(
+    Status IN
+    (
+        'PendingSelection',
+        'Queued',
+        'Downloading',
+        'ParsingSubtitles',
+        'Diarizing',
+        'Indexing',
+        'Completed',
+        'Failed',
+        'Expired'
+    )
+);
 
 IF NOT EXISTS
 (
@@ -148,6 +176,16 @@ BEGIN
     );
 END;
 
+IF COL_LENGTH(N'dbo.SubtitleSegments', N'SpeakerLabel') IS NULL
+BEGIN
+    ALTER TABLE dbo.SubtitleSegments ADD SpeakerLabel nvarchar(64) NULL;
+END;
+
+IF COL_LENGTH(N'dbo.SubtitleSegments', N'SpeakerName') IS NULL
+BEGIN
+    ALTER TABLE dbo.SubtitleSegments ADD SpeakerName nvarchar(256) NULL;
+END;
+
 IF NOT EXISTS
 (
     SELECT 1
@@ -170,6 +208,63 @@ IF NOT EXISTS
 BEGIN
     CREATE INDEX IX_SubtitleSegments_StreamId_StartMs
         ON dbo.SubtitleSegments (StreamId, StartMs);
+END;
+
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.SubtitleSegments')
+      AND name = N'IX_SubtitleSegments_StreamId_SpeakerName'
+)
+BEGIN
+    CREATE INDEX IX_SubtitleSegments_StreamId_SpeakerName
+        ON dbo.SubtitleSegments (StreamId, SpeakerName);
+END;
+
+IF OBJECT_ID(N'dbo.SpeakerTurns', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.SpeakerTurns
+    (
+        Id           bigint IDENTITY(1, 1) NOT NULL,
+        StreamId     bigint                 NOT NULL,
+        SpeakerLabel nvarchar(64)           NOT NULL,
+        SpeakerName  nvarchar(256)          NULL,
+        StartMs      bigint                 NOT NULL,
+        EndMs        bigint                 NOT NULL,
+        CreatedAt    datetimeoffset(3)      NOT NULL
+            CONSTRAINT DF_SpeakerTurns_CreatedAt DEFAULT SYSUTCDATETIME(),
+
+        CONSTRAINT PK_SpeakerTurns PRIMARY KEY CLUSTERED (Id),
+        CONSTRAINT FK_SpeakerTurns_Streams_StreamId FOREIGN KEY (StreamId)
+            REFERENCES dbo.Streams (Id) ON DELETE CASCADE,
+        CONSTRAINT CK_SpeakerTurns_TimeRange CHECK
+            (StartMs >= 0 AND EndMs > StartMs)
+    );
+END;
+
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.SpeakerTurns')
+      AND name = N'IX_SpeakerTurns_StreamId_StartMs'
+)
+BEGIN
+    CREATE INDEX IX_SpeakerTurns_StreamId_StartMs
+        ON dbo.SpeakerTurns (StreamId, StartMs);
+END;
+
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.SpeakerTurns')
+      AND name = N'IX_SpeakerTurns_StreamId_SpeakerLabel'
+)
+BEGIN
+    CREATE INDEX IX_SpeakerTurns_StreamId_SpeakerLabel
+        ON dbo.SpeakerTurns (StreamId, SpeakerLabel);
 END;
 
 COMMIT TRANSACTION;

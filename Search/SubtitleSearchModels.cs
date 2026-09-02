@@ -13,7 +13,9 @@ public sealed record SubtitleSearchDocument(
     int Sequence,
     long StartMs,
     long EndMs,
-    string Text);
+    string Text,
+    string? SpeakerLabel,
+    string? SpeakerName);
 
 public sealed record SubtitleSearchHit(
     long SegmentId,
@@ -25,6 +27,8 @@ public sealed record SubtitleSearchHit(
     long StartMs,
     long EndMs,
     string Text,
+    string? SpeakerLabel,
+    string? SpeakerName,
     string TimestampUrl);
 
 public sealed record SubtitleSearchResult(
@@ -47,6 +51,7 @@ public interface ISubtitleSearchService
     Task<SubtitleSearchResult> SearchAsync(
         string query,
         string? language = null,
+        string? speakerName = null,
         int offset = 0,
         int limit = 20,
         CancellationToken cancellationToken = default);

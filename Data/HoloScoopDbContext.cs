@@ -10,6 +10,7 @@ public sealed class HoloScoopDbContext(DbContextOptions<HoloScoopDbContext> opti
     public DbSet<MediaStream> Streams => Set<MediaStream>();
     public DbSet<MediaTask> Tasks => Set<MediaTask>();
     public DbSet<SubtitleSegment> SubtitleSegments => Set<SubtitleSegment>();
+    public DbSet<SpeakerTurn> SpeakerTurns => Set<SpeakerTurn>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -61,6 +62,14 @@ public sealed class HoloScoopDbContext(DbContextOptions<HoloScoopDbContext> opti
         }
 
         foreach (var entry in ChangeTracker.Entries<SubtitleSegment>())
+        {
+            if (entry.State == EntityState.Added)
+            {
+                entry.Entity.CreatedAt = now;
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<SpeakerTurn>())
         {
             if (entry.State == EntityState.Added)
             {

@@ -18,6 +18,8 @@ public sealed class SubtitleSegmentConfiguration : IEntityTypeConfiguration<Subt
         builder.Property(x => x.Language).HasMaxLength(32).IsRequired();
         builder.Property(x => x.Source).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Text).HasColumnType("nvarchar(max)").IsRequired();
+        builder.Property(x => x.SpeakerLabel).HasMaxLength(64);
+        builder.Property(x => x.SpeakerName).HasMaxLength(256);
         builder.Property(x => x.CreatedAt).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()");
         builder.HasOne(x => x.Stream)
             .WithMany(x => x.SubtitleSegments)
@@ -29,5 +31,7 @@ public sealed class SubtitleSegmentConfiguration : IEntityTypeConfiguration<Subt
             .HasDatabaseName("UX_SubtitleSegments_Stream_Language_Source_Sequence");
         builder.HasIndex(x => new { x.StreamId, x.StartMs })
             .HasDatabaseName("IX_SubtitleSegments_StreamId_StartMs");
+        builder.HasIndex(x => new { x.StreamId, x.SpeakerName })
+            .HasDatabaseName("IX_SubtitleSegments_StreamId_SpeakerName");
     }
 }

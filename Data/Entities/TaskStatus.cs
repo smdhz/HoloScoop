@@ -6,6 +6,7 @@ public enum TaskStatus
     Queued,
     Downloading,
     ParsingSubtitles,
+    Diarizing,
     Indexing,
     Completed,
     Failed,
