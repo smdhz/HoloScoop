@@ -6,7 +6,7 @@
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h1 class="h2 mb-1">任务管理</h1>
+        <h1 class="h4 mb-1">任务管理</h1>
         <p class="text-secondary mb-0">候选任务只有在人工选择后才会开始处理。</p>
     </div>
     <a class="btn btn-outline-secondary" asp-page="/Tasks/Index">刷新</a>
@@ -17,7 +17,55 @@
     <div class="alert alert-info" role="status">@Model.StatusMessage</div>
 }
 
-<h2 class="h4">等待选择 <span class="badge text-bg-primary">@Model.Candidates.Count</span></h2>
+<section class="card card-body mb-4">
+    <h2 class="h5">手动添加任务</h2>
+    <form method="get" class="row g-2">
+        <div class="col-md">
+            <label class="visually-hidden" for="member">主播名称</label>
+            <input id="member" class="form-control" name="member" value="@Model.MemberQuery" placeholder="输入主播名称" />
+        </div>
+        <div class="col-md-auto">
+            <button class="btn btn-outline-primary w-100" type="submit">检索 active 日程</button>
+        </div>
+    </form>
+
+    @if (!string.IsNullOrWhiteSpace(Model.MemberQuery))
+    {
+        @if (Model.ScheduleResults.Count == 0)
+        {
+            <p class="text-secondary mt-3 mb-0">没有找到匹配的 active 日程。</p>
+        }
+        else
+        {
+            <div class="table-responsive mt-3">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr><th>时间</th><th>主播</th><th>直播</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var schedule in Model.ScheduleResults)
+                    {
+                        <tr>
+                            <td class="text-nowrap">@schedule.StartDt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            <td>@schedule.MemberName</td>
+                            <td><a href="@schedule.StreamUrl" target="_blank" rel="noopener">@schedule.StreamTitle</a></td>
+                            <td class="text-end">
+                                <form method="post" asp-page-handler="AddManual">
+                                    <input type="hidden" name="scheduleId" value="@schedule.Id" />
+                                    <input type="hidden" name="member" value="@Model.MemberQuery" />
+                                    <button class="btn btn-sm btn-primary" type="submit">添加</button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</section>
+
+<h2 class="h5">等待选择 <span class="badge text-bg-primary">@Model.Candidates.Count</span></h2>
 @if (Model.Candidates.Count == 0)
 {
     <div class="empty-state mb-5">当前没有等待选择的候选任务。</div>
@@ -28,7 +76,7 @@ else
         @foreach (var task in Model.Candidates)
         {
             <div class="col-12 col-xl-6">
-                <article class="card h-100 shadow-sm">
+                <article class="card h-100">
                     <div class="card-body">
                         <div class="d-flex gap-3">
                             @if (!string.IsNullOrWhiteSpace(task.Stream.ThumbnailUrl))
@@ -63,7 +111,7 @@ else
     </div>
 }
 
-<h2 class="h4">最近任务</h2>
+<h2 class="h5">最近任务</h2>
 <div class="table-responsive">
     <table class="table align-middle">
         <thead>

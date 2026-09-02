@@ -1,22 +1,40 @@
 using HoloScoop.Data;
 using HoloScoop.Data.Entities;
+using HoloScoop.Services.Note;
+using HoloScoop.Services.Redis;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using MediaTaskStatus = HoloScoop.Data.Entities.TaskStatus;
 
 namespace HoloScoop.Pages.Tasks;
 
-public sealed class IndexModel(HoloScoopDbContext dbContext, ITaskCommands taskCommands) : PageModel
+public sealed class IndexModel(
+    HoloScoopDbContext dbContext,
+    ITaskCommands taskCommands,
+    INoteScheduleLookup noteScheduleLookup,
+    IIncomingTaskStore incomingTaskStore,
+    IOptions<RedisStreamOptions> redisOptions) : PageModel
 {
     public IReadOnlyList<MediaTask> Candidates { get; private set; } = [];
     public IReadOnlyList<MediaTask> RecentTasks { get; private set; } = [];
+    public IReadOnlyList<NoteScheduleSearchResult> ScheduleResults { get; private set; } = [];
+    public string? MemberQuery { get; private set; }
 
     [TempData]
     public string? StatusMessage { get; set; }
 
-    public async Task OnGetAsync(CancellationToken cancellationToken)
+    public async Task OnGetAsync(string? member, CancellationToken cancellationToken)
     {
+        MemberQuery = member?.Trim();
+        if (!string.IsNullOrWhiteSpace(MemberQuery))
+        {
+            ScheduleResults = await noteScheduleLookup.SearchActiveByMemberAsync(
+                MemberQuery,
+                cancellationToken: cancellationToken);
+        }
+
         var now = DateTimeOffset.UtcNow;
         Candidates = await dbContext.Tasks
             .AsNoTracking()
@@ -34,6 +52,32 @@ public sealed class IndexModel(HoloScoopDbContext dbContext, ITaskCommands taskC
             .OrderByDescending(task => task.UpdatedAt)
             .Take(50)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IActionResult> OnPostAddManualAsync(
+        Guid scheduleId,
+        string? member,
+        CancellationToken cancellationToken)
+    {
+        var message = await noteScheduleLookup.FindActiveAsync(scheduleId, cancellationToken);
+        if (message is null)
+        {
+            StatusMessage = "该日程不存在或已经不再 active。";
+            return RedirectToPage(new { member });
+        }
+
+        var lifetimeHours = redisOptions.Value.CandidateLifetimeHours;
+        var result = await incomingTaskStore.SaveCandidateAsync(
+            "manual:note",
+            scheduleId.ToString("D"),
+            message,
+            DateTimeOffset.UtcNow.AddHours(lifetimeHours),
+            cancellationToken);
+
+        StatusMessage = result == CandidateSaveResult.Created
+            ? "已添加到候选任务。"
+            : "该日程已经手动添加过。";
+        return RedirectToPage(new { member });
     }
 
     public async Task<IActionResult> OnPostSelectAsync(

@@ -1,6 +1,7 @@
 using HoloScoop.Data;
 using HoloScoop.Jobs;
 using HoloScoop.Search;
+using HoloScoop.Services.Note;
 using HoloScoop.Services.Redis;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,6 +15,7 @@ builder.Services.AddDbContext<HoloScoopDbContext>(options =>
 builder.Services.AddScoped<ITaskQueries, TaskQueries>();
 builder.Services.AddScoped<ITaskCommands, TaskCommands>();
 builder.Services.AddMediaAndSubtitleSearch(builder.Configuration);
+builder.Services.AddNoteScheduleLookup(builder.Configuration);
 
 if (builder.Configuration.GetValue("Redis:Enabled", true))
 {
@@ -22,7 +24,7 @@ if (builder.Configuration.GetValue("Redis:Enabled", true))
 
 if (builder.Configuration.GetValue("Jobs:Enabled", true))
 {
-    builder.Services.AddHoloScoopJobScheduling();
+    builder.Services.AddHoloScoopJobScheduling(builder.Configuration);
 }
 
 var app = builder.Build();

@@ -76,7 +76,7 @@ public sealed record IncomingStreamMessage(
     private static string InferPlatform(string? url) =>
         url?.Contains("youtu", StringComparison.OrdinalIgnoreCase) == true ? "youtube" : "unknown";
 
-    private static string? TryGetYouTubeId(string url)
+    public static string? TryGetYouTubeId(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return null;
         if (uri.Host.EndsWith("youtu.be", StringComparison.OrdinalIgnoreCase))

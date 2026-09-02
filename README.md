@@ -186,17 +186,17 @@ HoloScoop 只有一台本地服务器，并且不为存储增加额外预算，�
 - 提供简单的任务进度、失败原因和重试入口。
 - 提供字幕关键词搜索，并能跳转到 YouTube 时间戳。
 - 落实普通直播不长期保存视频的默认策略。
+- 每天清理创建超过 14 天且从未选择下载模式的任务，并删除没有其他任务或字幕引用的孤立直播记录。
 
 ### Redis 消息格式
 
-Consumer Group 默认读取 `holoscoop:tasks`。消息至少应提供 `externalId` 和 `title`，并建议完整提供：
+Consumer Group 默认读取 `holoscoop:tasks`。Redis Stream 是唯一任务入口，标准消息只包含 `Note.dbo.HololiveSchedule` 的主键：
 
 ```text
-platform, externalId, sourceUrl, title, channelId, channelName,
-description, thumbnailUrl, scheduledAt, startedAt, endedAt, durationMs
+id = {HololiveSchedule.Id GUID}
 ```
 
-YouTube 任务仅提供 `videoId` 时也可自动生成来源 URL；常见 camelCase、PascalCase 和 snake_case 字段均可解析。无效消息不会被确认，会保留在 Redis Pending Entries List 中供排查。
+Consumer 收到 ID 后，使用与 HoloScoop 相同的 SQL Server 账号连接 `Note` 数据库，读取 `HololiveSchedule` 的 `StartDt`、`MemberName`、`StreamUrl`、`StreamTitle` 和 `StreamImage`，再落入 HoloScoop。`Note` 仅用于按消息 ID 补全数据，不会被轮询，也不是第二个任务入口。找不到对应记录或消息无效时不会确认消息，会保留在 Redis Pending Entries List 中供排查。
 
 ## Docker 部署
 
@@ -209,7 +209,7 @@ Copy-Item .env.example .env
 docker compose up -d --build
 ```
 
-首次部署还需要由具备建表权限的账号执行 [`database/schema.sql`](database/schema.sql)。开发环境默认关闭 Redis Consumer 和 Quartz 作业，避免缺少外部服务时反复重试；生产环境默认启用。
+首次部署还需要由具备建表权限的账号执行 [`database/schema.sql`](database/schema.sql)。
 
 在本机试运行且暂时不挂载 NAS 时，使用本地卷覆盖文件：
 
@@ -217,7 +217,7 @@ docker compose up -d --build
 docker compose -f compose.yaml -f compose.local.yaml up -d --build
 ```
 
-正式 `compose.yaml` 固定使用 `Production`、NAS NFS、Redis Consumer 和 Quartz。`compose.local.yaml` 将应用覆盖为 `Development` 并使用本地 `library_data`；开发配置默认关闭 Redis Consumer 和 Quartz，避免依赖外部任务源。
+正式 `compose.yaml` 固定使用 `Production` 和 NAS NFS。`compose.local.yaml` 将应用覆盖为 `Development` 并使用本地 `library_data`。两种模式都使用 Redis Stream 入口、Note 数据补全和 Quartz 处理链路。
 
 应用默认通过 `http://localhost:8080` 访问。Meilisearch 端口只绑定在宿主机的 `127.0.0.1:7700`，容器内的 HoloScoop 通过 `http://meilisearch:7700` 访问它。
 

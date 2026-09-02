@@ -4,8 +4,16 @@ namespace HoloScoop.Jobs;
 
 public static class JobServiceCollectionExtensions
 {
-    public static IServiceCollection AddHoloScoopJobScheduling(this IServiceCollection services)
+    public static IServiceCollection AddHoloScoopJobScheduling(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
+        services.AddOptions<MaintenanceOptions>()
+            .Bind(configuration.GetSection(MaintenanceOptions.SectionName))
+            .Validate(
+                options => options.UnselectedRetentionDays > 0,
+                "Maintenance:UnselectedRetentionDays must be positive.")
+            .ValidateOnStart();
         services.AddScoped<ITaskStateMachine, TaskStateMachine>();
         services.AddQuartz(configurator =>
         {
@@ -24,6 +32,14 @@ public static class JobServiceCollectionExtensions
                 .ForJob(queuedKey)
                 .StartNow()
                 .WithSimpleSchedule(schedule => schedule.WithIntervalInSeconds(5).RepeatForever()));
+
+            var cleanupKey = new JobKey("cleanup-unselected-tasks");
+            configurator.AddJob<CleanupUnselectedTasksJob>(options => options.WithIdentity(cleanupKey));
+            configurator.AddTrigger(options => options
+                .WithIdentity("cleanup-unselected-tasks-daily")
+                .ForJob(cleanupKey)
+                .StartNow()
+                .WithSimpleSchedule(schedule => schedule.WithIntervalInHours(24).RepeatForever()));
         });
         services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
         return services;

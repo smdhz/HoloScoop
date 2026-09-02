@@ -4,13 +4,12 @@
     ViewData["Title"] = "首页";
 }
 
-<div class="hero-panel p-4 p-md-5 mb-4">
-    <p class="text-uppercase small fw-semibold text-primary mb-2">Hololive stream knowledge base</p>
-    <h1 class="display-5 fw-semibold">从直播字幕里找到那一刻</h1>
-    <p class="lead text-secondary col-lg-8">接收候选直播，按需保存字幕或视频，并从搜索结果直接跳转到 YouTube 对应时间点。</p>
+<div class="mb-4">
+    <h1 class="h3">从直播字幕里找到那一刻</h1>
+    <p class="text-secondary">接收候选直播，按需保存字幕或视频，并从搜索结果直接跳转到 YouTube 对应时间点。</p>
     <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-primary btn-lg" asp-page="/Tasks/Index">管理候选任务</a>
-        <a class="btn btn-outline-primary btn-lg" asp-page="/Search/Index">搜索字幕</a>
+        <a class="btn btn-primary" asp-page="/Tasks/Index">管理候选任务</a>
+        <a class="btn btn-outline-primary" asp-page="/Search/Index">搜索字幕</a>
     </div>
 </div>
 

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using HoloScoop.Services.Note;
 using StackExchange.Redis;
 
 namespace HoloScoop.Services.Redis;
@@ -130,7 +131,23 @@ public sealed class RedisStreamConsumer(
         StreamEntry entry,
         CancellationToken cancellationToken)
     {
-        if (!IncomingStreamMessage.TryParse(entry.Values, out var message, out var error))
+        await using var scope = scopeFactory.CreateAsyncScope();
+        IncomingStreamMessage? message;
+        if (TryGetNoteScheduleId(entry.Values, out var scheduleId))
+        {
+            var lookup = scope.ServiceProvider.GetRequiredService<INoteScheduleLookup>();
+            message = await lookup.FindAsync(scheduleId, cancellationToken).ConfigureAwait(false);
+            if (message is null)
+            {
+                logger.LogError(
+                    "Redis message {Stream}/{MessageId} references missing Note.dbo.HololiveSchedule row {ScheduleId}.",
+                    _options.StreamKey,
+                    entry.Id,
+                    scheduleId);
+                return;
+            }
+        }
+        else if (!IncomingStreamMessage.TryParse(entry.Values, out message, out var error))
         {
             // Do not ACK malformed input: it remains inspectable/recoverable in the PEL.
             logger.LogError("Invalid Redis stream message {Stream}/{MessageId}: {Error}",
@@ -138,7 +155,6 @@ public sealed class RedisStreamConsumer(
             return;
         }
 
-        await using var scope = scopeFactory.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IIncomingTaskStore>();
         var result = await store.SaveCandidateAsync(
             _options.StreamKey,
@@ -150,5 +166,23 @@ public sealed class RedisStreamConsumer(
         // The unique Redis stream/message key makes AlreadyExists safe to acknowledge.
         await database.StreamAcknowledgeAsync(_options.StreamKey, _options.ConsumerGroup, entry.Id).ConfigureAwait(false);
         logger.LogInformation("Redis message {MessageId} persisted ({Result}) and acknowledged.", entry.Id, result);
+    }
+
+    private static bool TryGetNoteScheduleId(NameValueEntry[] values, out Guid scheduleId)
+    {
+        foreach (var value in values)
+        {
+            var name = value.Name.ToString();
+            if (name.Equals("id", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("scheduleId", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("schedule_id", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("hololiveScheduleId", StringComparison.OrdinalIgnoreCase))
+            {
+                return Guid.TryParse(value.Value.ToString(), out scheduleId);
+            }
+        }
+
+        scheduleId = Guid.Empty;
+        return false;
     }
 }
