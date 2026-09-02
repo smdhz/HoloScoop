@@ -41,6 +41,8 @@ HoloScoop/
 
 第一阶段只使用三张核心表，不为视频、字幕文件另建资产表。
 
+数据库结构通过 [`database/schema.sql`](database/schema.sql) 手工维护和部署，不使用 EF Core migration。脚本采用存在性检查，可以对已经初始化的数据库重复执行；后续修改表结构时也应显式更新这份脚本。
+
 #### `Tasks`
 
 同一张表同时表示“等待用户选择的候选任务”和“已进入处理流程的任务”，不再拆分 `IncomingTasks` 和 `MediaJobs`。
@@ -117,7 +119,7 @@ Expired
 
 使用 `(StreamId, Language, Source, Sequence)` 唯一约束，并对 `(StreamId, StartMs)` 建立索引。起止时间统一使用整数毫秒。
 
-视频和原始字幕文件按固定目录规则保存，例如 `media/{Platform}/{ExternalId}/`，数据库不单独记录每个文件。只有将来真正出现多存储后端、多版本媒体或文件迁移需求时，才考虑增加资产表。
+视频和原始字幕文件按固定目录规则保存在本地文件系统中，数据库只保存相对路径，不保存宿主机绝对路径。数据库暂不单独记录每个文件；只有将来真正出现多存储后端、多版本媒体或文件迁移需求时，才考虑增加资产表。
 
 ### 处理流程
 
@@ -133,13 +135,41 @@ Expired
 
 Redis Stream 只负责传递任务，不承担等待用户选择的状态。消息落库后即可确认；候选任务的选择、过期和媒体处理状态均以 MSSQL 为准。
 
-### 视频存储策略
+### 本地文件存储策略
 
-- 普通直播：只长期保存元数据、字幕、聊天记录和缩略图。
-- 高价值直播：按明确规则或人工标记长期保存视频。
-- 转写过程中产生的临时媒体文件在任务完成后清理。
+HoloScoop 只有一台本地服务器，并且不为存储增加额外预算，因此直接使用宿主机文件系统，不使用 AWS S3，也不额外部署 MinIO、Ceph 等对象存储服务。单机环境下引入这些服务不会增加可用存储空间，反而会增加部署和维护成本。
 
-这样可以把系统重点放在内容检索和知识沉淀上，而不是持续扩张的视频仓库。
+宿主机使用两个相互独立的目录：
+
+```text
+/data/holoscoop/
+├── library/                         # 长期保留的文件
+│   └── youtube/
+│       └── {ExternalId}/
+│           ├── metadata/
+│           │   └── info.json
+│           ├── subtitles/
+│           ├── chat/
+│           ├── thumbnails/
+│           └── video/
+└── work/                            # 下载、转码和转写的临时文件
+    └── {TaskId}/
+```
+
+容器内分别挂载为 `/data/library` 和 `/data/work`。业务数据和配置只使用类似 `youtube/{ExternalId}/subtitles/ja.auto.vtt` 的相对路径，不能保存 `/data/holoscoop/...` 或 `/data/library/...` 之类依赖部署环境的绝对路径。
+
+- 普通直播：长期保存元数据、字幕、聊天记录和缩略图。
+- 高价值直播：按明确规则或人工标记，将视频保存在 `library`。
+- 下载中的视频、抽取的音频以及 Whisper 中间文件保存在 `work/{TaskId}`。
+- 任务完成后清理临时文件；失败任务的临时文件在保留一段排错时间后清理。
+- MSSQL 保存任务状态、直播元数据和解析后的字幕分段。
+- Meilisearch 只保存可从 MSSQL 重建的搜索索引。
+
+未来只有在增加其他服务器或实际需要多机共享文件时，才考虑抽象并迁移到其他存储后端。当前不为尚未出现的多存储需求增加复杂度。
+
+单台服务器上的文件不构成真正的备份；在没有额外磁盘和异地空间的前提下，这个风险无法通过软件消除。公开视频原则上允许从来源重新下载，数据库和无法重新生成的人工数据应优先保护。
+
+这样可以把系统重点放在内容检索和知识沉淀上，而不是维护没有实际收益的存储基础设施。
 
 ## 第一阶段 MVP
 
@@ -169,7 +199,7 @@ docker compose up -d --build
 
 应用默认通过 `http://localhost:8080` 访问。Meilisearch 端口只绑定在宿主机的 `127.0.0.1:7700`，容器内的 HoloScoop 通过 `http://meilisearch:7700` 访问它。
 
-应用镜像基于 .NET 10 Ubuntu 镜像构建，并安装 `yt-dlp`、`ffmpeg` 以及 YouTube 解析所需的 Deno JavaScript 运行时。下载的媒体保存在 Docker 命名卷 `media_data` 中，Meilisearch 数据保存在 `meilisearch_data` 中。
+应用镜像基于 .NET 10 Ubuntu 镜像构建，并安装 `yt-dlp`、`ffmpeg` 以及 YouTube 解析所需的 Deno JavaScript 运行时。Compose 将 `10.16.1.101:/volume1/media/Video/Hololive` 作为 NFS 卷挂载到容器内的 `/data/library`，长期文件直接保存在该目录；临时工作目录 `/data/work` 和 Meilisearch 数据分别使用本地 Docker 卷 `work_data` 和 `meilisearch_data`。
 
 ## 暂不做
 

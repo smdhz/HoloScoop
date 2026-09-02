@@ -17,9 +17,11 @@ services:
       Redis__StreamName: "${REDIS_STREAM_NAME:-holoscoop:tasks}"
       Meilisearch__Url: "http://meilisearch:7700"
       Meilisearch__MasterKey: "${MEILI_MASTER_KEY:?Set MEILI_MASTER_KEY in .env}"
-      Media__RootPath: "/data/media"
+      Media__LibraryPath: "/data/library"
+      Media__WorkPath: "/data/work"
     volumes:
-      - media_data:/data/media
+      - library_data:/data/library
+      - work_data:/data/work
     depends_on:
       meilisearch:
         condition: service_healthy
@@ -43,5 +45,11 @@ services:
       start_period: 10s
 
 volumes:
-  media_data:
+  library_data:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=10.16.1.101,rw,nfsvers=3"
+      device: ":/volume1/media/Video/Hololive"
+  work_data:
   meilisearch_data:
