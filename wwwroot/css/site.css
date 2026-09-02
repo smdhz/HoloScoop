@@ -19,6 +19,33 @@ html {
 
 body {
   margin-bottom: 60px;
+  background: #f6f7fb;
+}
+
+.hero-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 1.25rem;
+  background: linear-gradient(135deg, #fff 25%, #eef4ff 100%);
+}
+
+.empty-state {
+  padding: 2rem;
+  color: var(--bs-secondary-color);
+  text-align: center;
+  border: 1px dashed #cbd5e1;
+  border-radius: .75rem;
+  background: #fff;
+}
+
+.task-thumbnail {
+  width: 9rem;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: .5rem;
+}
+
+.min-width-0 {
+  min-width: 0;
 }
 
 .form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {

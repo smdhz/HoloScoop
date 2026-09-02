@@ -20,22 +20,23 @@ HoloScoop 从 Redis Stream 接收待处理任务。任务先作为候选项展�
 - Meilisearch 提供全文搜索；它只是可随时从 MSSQL 重建的搜索索引，不作为权威数据源。
 - 媒体任务与 Web 放在同一个项目中，通过 `yt-dlp` 获取字幕及所需信息，必要时调用 `ffmpeg` 和 Whisper。等出现明确的独立部署或扩容需求后，再考虑拆分 Worker。
 
-计划中的最小目录结构：
+当前目录按以下职责组织：
 
 ```text
 HoloScoop/
-├── HoloScoop.sln
-├── src/
-│   └── HoloScoop/
-│       ├── Pages/       # Razor Pages
-│       ├── Jobs/        # Quartz 作业（后续添加）
-│       ├── Data/        # EF Core（后续添加）
-│       ├── Search/      # Meilisearch（后续添加）
-│       └── Services/    # 媒体处理等服务（后续添加）
+├── HoloScoop.csproj
+├── Pages/       # 任务管理与字幕搜索页面
+├── Jobs/        # Quartz 过期和任务处理作业
+├── Data/        # EF Core 实体与 SQL Server 映射
+├── Search/      # Meilisearch 索引与检索
+├── Services/    # Redis 接入与媒体处理
+├── database/    # 手工部署的 SQL Server schema
+├── Dockerfile
+├── compose.yaml
 └── README.md
 ```
 
-当前只建立 solution、标准 Razor Pages 项目骨架和方案文档，不实现具体业务。
+当前已经实现第一阶段的基本闭环：Redis Stream 候选任务落库、人工选择、Quartz 调度、`yt-dlp` 下载、VTT 字幕解析、Meilisearch 索引和带 YouTube 时间戳的搜索。数据库仍通过手工脚本部署，不在应用启动时自动修改结构。
 
 ### 建议的核心数据表
 
@@ -186,6 +187,17 @@ HoloScoop 只有一台本地服务器，并且不为存储增加额外预算，�
 - 提供字幕关键词搜索，并能跳转到 YouTube 时间戳。
 - 落实普通直播不长期保存视频的默认策略。
 
+### Redis 消息格式
+
+Consumer Group 默认读取 `holoscoop:tasks`。消息至少应提供 `externalId` 和 `title`，并建议完整提供：
+
+```text
+platform, externalId, sourceUrl, title, channelId, channelName,
+description, thumbnailUrl, scheduledAt, startedAt, endedAt, durationMs
+```
+
+YouTube 任务仅提供 `videoId` 时也可自动生成来源 URL；常见 camelCase、PascalCase 和 snake_case 字段均可解析。无效消息不会被确认，会保留在 Redis Pending Entries List 中供排查。
+
 ## Docker 部署
 
 `compose.yaml` 只启动 HoloScoop 和 Meilisearch。MSSQL 和 Redis 使用已有的外部实例，不由本项目的 Compose 创建。
@@ -197,6 +209,8 @@ Copy-Item .env.example .env
 docker compose up -d --build
 ```
 
+首次部署还需要由具备建表权限的账号执行 [`database/schema.sql`](database/schema.sql)。开发环境默认关闭 Redis Consumer 和 Quartz 作业，避免缺少外部服务时反复重试；生产环境默认启用。
+
 应用默认通过 `http://localhost:8080` 访问。Meilisearch 端口只绑定在宿主机的 `127.0.0.1:7700`，容器内的 HoloScoop 通过 `http://meilisearch:7700` 访问它。
 
 应用镜像基于 .NET 10 Ubuntu 镜像构建，并安装 `yt-dlp`、`ffmpeg` 以及 YouTube 解析所需的 Deno JavaScript 运行时。Compose 将 `10.16.1.101:/volume1/media/Video/Hololive` 作为 NFS 卷挂载到容器内的 `/data/library`，长期文件直接保存在该目录；临时工作目录 `/data/work` 和 Meilisearch 数据分别使用本地 Docker 卷 `work_data` 和 `meilisearch_data`。
@@ -206,4 +220,3 @@ docker compose up -d --build
 - 不做 embedding 或向量检索。
 - 不引入复杂的分布式队列。
 - 不做全量视频下载和长期归档。
-- 不在当前空骨架阶段实现具体业务。

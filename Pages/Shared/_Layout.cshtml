@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -20,12 +20,9 @@
                 </button>
                 <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
                     <ul class="navbar-nav flex-grow-1">
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/Index">Home</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/Privacy">Privacy</a>
-                        </li>
+                        <li class="nav-item"><a class="nav-link text-dark" asp-page="/Index">首页</a></li>
+                        <li class="nav-item"><a class="nav-link text-dark" asp-page="/Tasks/Index">任务</a></li>
+                        <li class="nav-item"><a class="nav-link text-dark" asp-page="/Search/Index">字幕搜索</a></li>
                     </ul>
                 </div>
             </div>
@@ -39,7 +36,7 @@
 
     <footer class="border-top footer text-muted">
         <div class="container">
-            &copy; 2026 - HoloScoop - <a asp-area="" asp-page="/Privacy">Privacy</a>
+            &copy; 2026 HoloScoop
         </div>
     </footer>
 

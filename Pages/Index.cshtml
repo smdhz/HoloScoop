@@ -1,10 +1,21 @@
 ﻿@page
 @model IndexModel
 @{
-    ViewData["Title"] = "Home page";
+    ViewData["Title"] = "首页";
 }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+<div class="hero-panel p-4 p-md-5 mb-4">
+    <p class="text-uppercase small fw-semibold text-primary mb-2">Hololive stream knowledge base</p>
+    <h1 class="display-5 fw-semibold">从直播字幕里找到那一刻</h1>
+    <p class="lead text-secondary col-lg-8">接收候选直播，按需保存字幕或视频，并从搜索结果直接跳转到 YouTube 对应时间点。</p>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-primary btn-lg" asp-page="/Tasks/Index">管理候选任务</a>
+        <a class="btn btn-outline-primary btn-lg" asp-page="/Search/Index">搜索字幕</a>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-4"><div class="card h-100"><div class="card-body"><h2 class="h5">先选择，再下载</h2><p class="text-secondary mb-0">Redis 收到的任务先进入候选列表，不会自动消耗存储。</p></div></div></div>
+    <div class="col-md-4"><div class="card h-100"><div class="card-body"><h2 class="h5">字幕是权威数据</h2><p class="text-secondary mb-0">字幕分段保存在 MSSQL，并可随时重建搜索索引。</p></div></div></div>
+    <div class="col-md-4"><div class="card h-100"><div class="card-body"><h2 class="h5">一键跳转原视频</h2><p class="text-secondary mb-0">每条结果都带时间戳，直接打开对应直播片段。</p></div></div></div>
 </div>

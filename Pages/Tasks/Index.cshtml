@@ -1,0 +1,100 @@
+@page
+@model HoloScoop.Pages.Tasks.IndexModel
+@{
+    ViewData["Title"] = "任务管理";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h2 mb-1">任务管理</h1>
+        <p class="text-secondary mb-0">候选任务只有在人工选择后才会开始处理。</p>
+    </div>
+    <a class="btn btn-outline-secondary" asp-page="/Tasks/Index">刷新</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-info" role="status">@Model.StatusMessage</div>
+}
+
+<h2 class="h4">等待选择 <span class="badge text-bg-primary">@Model.Candidates.Count</span></h2>
+@if (Model.Candidates.Count == 0)
+{
+    <div class="empty-state mb-5">当前没有等待选择的候选任务。</div>
+}
+else
+{
+    <div class="row g-3 mb-5">
+        @foreach (var task in Model.Candidates)
+        {
+            <div class="col-12 col-xl-6">
+                <article class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex gap-3">
+                            @if (!string.IsNullOrWhiteSpace(task.Stream.ThumbnailUrl))
+                            {
+                                <img class="task-thumbnail" src="@task.Stream.ThumbnailUrl" alt="" loading="lazy" />
+                            }
+                            <div class="min-width-0">
+                                <h3 class="h5 text-break">@task.Stream.Title</h3>
+                                <div class="text-secondary small">@task.Stream.ChannelName · @task.Stream.ExternalId</div>
+                                <div class="text-secondary small">到期：@(task.ExpiresAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "不自动过期")</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-footer d-flex flex-wrap gap-2">
+                        <form method="post" asp-page-handler="Select">
+                            <input type="hidden" name="id" value="@task.Id" />
+                            <input type="hidden" name="mode" value="SubtitlesOnly" />
+                            <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(task.RowVersion)" />
+                            <button class="btn btn-primary" type="submit">仅下载字幕</button>
+                        </form>
+                        <form method="post" asp-page-handler="Select">
+                            <input type="hidden" name="id" value="@task.Id" />
+                            <input type="hidden" name="mode" value="VideoAndSubtitles" />
+                            <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(task.RowVersion)" />
+                            <button class="btn btn-outline-primary" type="submit">视频和字幕</button>
+                        </form>
+                        <a class="btn btn-link ms-auto" href="@task.Stream.SourceUrl" target="_blank" rel="noopener">查看来源</a>
+                    </div>
+                </article>
+            </div>
+        }
+    </div>
+}
+
+<h2 class="h4">最近任务</h2>
+<div class="table-responsive">
+    <table class="table align-middle">
+        <thead>
+            <tr><th>直播</th><th>模式</th><th>状态</th><th>尝试</th><th>更新时间</th><th></th></tr>
+        </thead>
+        <tbody>
+        @foreach (var task in Model.RecentTasks)
+        {
+            <tr>
+                <td>
+                    <a href="@task.Stream.SourceUrl" target="_blank" rel="noopener">@task.Stream.Title</a>
+                    @if (!string.IsNullOrWhiteSpace(task.LastError))
+                    {
+                        <div class="small text-danger text-break">@task.LastError</div>
+                    }
+                </td>
+                <td>@task.DownloadMode</td>
+                <td><span class="badge text-bg-secondary">@task.Status</span></td>
+                <td>@task.AttemptCount</td>
+                <td>@task.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                <td>
+                    @if (task.Status == HoloScoop.Data.Entities.TaskStatus.Failed)
+                    {
+                        <form method="post" asp-page-handler="Retry">
+                            <input type="hidden" name="id" value="@task.Id" />
+                            <button class="btn btn-sm btn-outline-danger" type="submit">重试</button>
+                        </form>
+                    }
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
