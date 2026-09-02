@@ -24,9 +24,15 @@ else
             var thumbnailUrl = project.HasLocalThumbnail
                 ? Url.Page("/Index", "Thumbnail", new { streamId = project.StreamId })
                 : project.RemoteThumbnailUrl;
+            var projectUrl = project.HasLocalVideo
+                ? Url.Page("/Watch", new { streamId = project.StreamId })
+                : project.SourceUrl;
             <div class="col">
                 <article class="card h-100 overflow-hidden recent-project-card">
-                    <a href="@project.SourceUrl" target="_blank" rel="noopener" class="text-decoration-none">
+                    <a href="@projectUrl"
+                       target="@(project.HasLocalVideo ? null : "_blank")"
+                       rel="@(project.HasLocalVideo ? null : "noopener")"
+                       class="text-decoration-none">
                         @if (!string.IsNullOrWhiteSpace(thumbnailUrl))
                         {
                             <img class="card-img-top recent-project-thumbnail"
@@ -41,9 +47,9 @@ else
                     </a>
                     <div class="card-body">
                         <h2 class="h6 card-title mb-2">
-                            <a href="@project.SourceUrl"
-                               target="_blank"
-                               rel="noopener"
+                            <a href="@projectUrl"
+                               target="@(project.HasLocalVideo ? null : "_blank")"
+                               rel="@(project.HasLocalVideo ? null : "noopener")"
                                class="text-reset text-decoration-none">@project.Title</a>
                         </h2>
                         @if (!string.IsNullOrWhiteSpace(project.ChannelName))

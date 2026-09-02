@@ -86,22 +86,21 @@ else
                             <div class="min-width-0">
                                 <h3 class="h5 text-break">@task.Stream.Title</h3>
                                 <div class="text-secondary small">@task.Stream.ChannelName · @task.Stream.ExternalId</div>
-                                <div class="text-secondary small">到期：@(task.ExpiresAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "不自动过期")</div>
                             </div>
                         </div>
                     </div>
                     <div class="card-footer d-flex flex-wrap gap-2">
                         <form method="post" asp-page-handler="Select">
                             <input type="hidden" name="id" value="@task.Id" />
-                            <input type="hidden" name="mode" value="SubtitlesOnly" />
+                            <input type="hidden" name="mode" value="VideoAndSubtitles" />
                             <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(task.RowVersion)" />
-                            <button class="btn btn-primary" type="submit">仅下载字幕</button>
+                            <button class="btn btn-primary" type="submit">下载视频和字幕</button>
                         </form>
                         <form method="post" asp-page-handler="Select">
                             <input type="hidden" name="id" value="@task.Id" />
-                            <input type="hidden" name="mode" value="VideoAndSubtitles" />
+                            <input type="hidden" name="mode" value="SubtitlesOnly" />
                             <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(task.RowVersion)" />
-                            <button class="btn btn-outline-primary" type="submit">视频和字幕</button>
+                            <button class="btn btn-outline-secondary" type="submit">仅下载字幕</button>
                         </form>
                         <a class="btn btn-link ms-auto" href="@task.Stream.SourceUrl" target="_blank" rel="noopener">查看来源</a>
                     </div>
@@ -122,7 +121,14 @@ else
         {
             <tr>
                 <td>
-                    <a href="@task.Stream.SourceUrl" target="_blank" rel="noopener">@task.Stream.Title</a>
+                    @if (Model.HasLocalVideo(task.StreamId))
+                    {
+                        <a asp-page="/Watch" asp-route-streamId="@task.StreamId">@task.Stream.Title</a>
+                    }
+                    else
+                    {
+                        <a href="@task.Stream.SourceUrl" target="_blank" rel="noopener">@task.Stream.Title</a>
+                    }
                     @if (!string.IsNullOrWhiteSpace(task.LastError))
                     {
                         <div class="small text-danger text-break">@task.LastError</div>

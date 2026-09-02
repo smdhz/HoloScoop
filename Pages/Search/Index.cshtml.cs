@@ -1,12 +1,17 @@
+using HoloScoop.Data;
 using HoloScoop.Search;
+using HoloScoop.Services.Media;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.EntityFrameworkCore;
 
 namespace HoloScoop.Pages.Search;
 
 public sealed class IndexModel(
     ISubtitleSearchService searchService,
-    ISearchIndexRebuilder indexRebuilder) : PageModel
+    ISearchIndexRebuilder indexRebuilder,
+    HoloScoopDbContext dbContext,
+    ILocalMediaLibrary mediaLibrary) : PageModel
 {
     [BindProperty(SupportsGet = true, Name = "q")]
     public string Query { get; set; } = string.Empty;
@@ -16,6 +21,7 @@ public sealed class IndexModel(
 
     public SubtitleSearchResult? Result { get; private set; }
     public string? ErrorMessage { get; private set; }
+    public IReadOnlySet<long> LocalVideoStreamIds { get; private set; } = new HashSet<long>();
 
     [TempData]
     public string? StatusMessage { get; set; }
@@ -29,12 +35,24 @@ public sealed class IndexModel(
         try
         {
             Result = await searchService.SearchAsync(Query, Language, cancellationToken: cancellationToken);
+            var streamIds = Result.Hits.Select(hit => hit.StreamId).Distinct().ToArray();
+            var streams = await dbContext.Streams
+                .AsNoTracking()
+                .Where(stream => streamIds.Contains(stream.Id))
+                .Select(stream => new { stream.Id, stream.ExternalId })
+                .ToListAsync(cancellationToken);
+            LocalVideoStreamIds = streams
+                .Where(stream => mediaLibrary.FindVideo(stream.ExternalId) is not null)
+                .Select(stream => stream.Id)
+                .ToHashSet();
         }
         catch (HttpRequestException)
         {
             ErrorMessage = "搜索服务暂时不可用，请稍后重试。";
         }
     }
+
+    public bool HasLocalVideo(long streamId) => LocalVideoStreamIds.Contains(streamId);
 
     public async Task<IActionResult> OnPostRebuildAsync(CancellationToken cancellationToken)
     {

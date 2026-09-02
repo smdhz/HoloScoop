@@ -19,11 +19,13 @@ public sealed class TaskQueries(HoloScoopDbContext dbContext) : ITaskQueries
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
+        var selectionCutoff = now.AddHours(-1);
         return await dbContext.Tasks
             .AsNoTracking()
             .Include(x => x.Stream)
             .Where(x => x.Status == MediaTaskStatus.PendingSelection
-                && (x.ExpiresAt == null || x.ExpiresAt > now))
+                && (x.ExpiresAt == null || x.ExpiresAt > now)
+                && (x.Stream.StartedAt ?? x.Stream.ScheduledAt) <= selectionCutoff)
             .OrderBy(x => x.ExpiresAt)
             .ThenBy(x => x.CreatedAt)
             .ToListAsync(cancellationToken);

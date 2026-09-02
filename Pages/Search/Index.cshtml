@@ -64,7 +64,17 @@ else if (Model.Result is { } result)
                     <p class="mb-2">@hit.Text</p>
                     <div class="d-flex align-items-center gap-3 small text-secondary">
                         <span>@hit.ChannelName</span>
-                        <a href="@hit.TimestampUrl" target="_blank" rel="noopener">▶ @HoloScoop.Pages.Search.IndexModel.FormatTimestamp(hit.StartMs)</a>
+                        @if (Model.HasLocalVideo(hit.StreamId))
+                        {
+                            <a asp-page="/Watch"
+                               asp-route-streamId="@hit.StreamId"
+                               asp-route-t="@(hit.StartMs / 1000)">▶ 本地播放 @HoloScoop.Pages.Search.IndexModel.FormatTimestamp(hit.StartMs)</a>
+                            <a href="@hit.TimestampUrl" target="_blank" rel="noopener">YouTube</a>
+                        }
+                        else
+                        {
+                            <a href="@hit.TimestampUrl" target="_blank" rel="noopener">▶ YouTube @HoloScoop.Pages.Search.IndexModel.FormatTimestamp(hit.StartMs)</a>
+                        }
                     </div>
                 </div>
             </article>

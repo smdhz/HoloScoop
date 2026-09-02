@@ -27,6 +27,7 @@ public static class MediaSearchServiceCollectionExtensions
             .ValidateOnStart();
 
         services.AddScoped<IMediaDownloader, YtDlpMediaDownloader>();
+        services.AddSingleton<ILocalMediaLibrary, LocalMediaLibrary>();
         services.AddSingleton<ISubtitleParser, WebVttParser>();
         services.AddScoped<IMediaTaskProcessor, MediaTaskProcessor>();
 

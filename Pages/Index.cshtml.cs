@@ -10,7 +10,8 @@ namespace HoloScoop.Pages;
 
 public sealed class IndexModel(
     HoloScoopDbContext dbContext,
-    IOptions<MediaProcessingOptions> mediaOptions) : PageModel
+    IOptions<MediaProcessingOptions> mediaOptions,
+    ILocalMediaLibrary mediaLibrary) : PageModel
 {
     private static readonly IReadOnlyDictionary<string, string> ThumbnailContentTypes =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -45,7 +46,8 @@ public sealed class IndexModel(
                 task.Stream.SourceUrl,
                 task.Stream.ThumbnailUrl,
                 task.UpdatedAt,
-                HasLocalThumbnail(task.Stream.ExternalId)))
+                HasLocalThumbnail(task.Stream.ExternalId),
+                mediaLibrary.FindVideo(task.Stream.ExternalId) is not null))
             .ToList();
     }
 
@@ -101,5 +103,6 @@ public sealed class IndexModel(
         string SourceUrl,
         string? RemoteThumbnailUrl,
         DateTimeOffset CompletedAt,
-        bool HasLocalThumbnail);
+        bool HasLocalThumbnail,
+        bool HasLocalVideo);
 }

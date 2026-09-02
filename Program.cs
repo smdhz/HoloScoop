@@ -1,6 +1,7 @@
 using HoloScoop.Data;
 using HoloScoop.Jobs;
 using HoloScoop.Search;
+using HoloScoop.Services.Media;
 using HoloScoop.Services.Note;
 using HoloScoop.Services.Redis;
 using Microsoft.EntityFrameworkCore;
@@ -53,6 +54,7 @@ app.UseHttpsRedirection();
 app.UseRouting();
 app.UseAuthorization();
 app.MapStaticAssets();
+app.MapMediaEndpoints();
 app.MapRazorPages().WithStaticAssets();
 
 app.Run();

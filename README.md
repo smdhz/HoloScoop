@@ -126,13 +126,13 @@ Expired
 
 1. 使用 Consumer Group 从 Redis Stream 读取任务。
 2. 根据 Redis 消息 ID 去重，将候选任务和过期时间写入 MSSQL；写入成功后再 `XACK`。
-3. 管理页面展示尚未过期的候选任务，并提供两个操作：
+3. 管理页面展示已开播至少 1 小时且尚未过期的候选任务，并提供两个操作：
    - **下载视频和字幕**：将 `DownloadMode` 设为 `VideoAndSubtitles`。
    - **仅下载字幕**：将 `DownloadMode` 设为 `SubtitlesOnly`。
 4. 选择后将当前 `Tasks` 记录改为 `Queued`；用户不做选择时不开始下载，到期后将该记录改为 `Expired`。
 5. `yt-dlp` 按用户选择下载视频和/或已有字幕，然后将字幕按时间切段写入 MSSQL。
 6. 把可搜索内容同步到 Meilisearch。
-7. Web 页面提供关键词搜索，并跳转到 YouTube 对应时间戳。
+7. Web 页面提供关键词搜索，并跳转到本地视频或 YouTube 的对应时间戳。
 
 Redis Stream 只负责传递任务，不承担等待用户选择的状态。消息落库后即可确认；候选任务的选择、过期和媒体处理状态均以 MSSQL 为准。
 
@@ -213,11 +213,24 @@ docker compose up -d --build
 
 `compose.yaml` 固定使用 `Production` 和 NAS NFS，并启用 Redis Stream 入口、Note 数据补全和 Quartz 处理链路。
 
-应用默认通过 `http://localhost:8080` 访问。Meilisearch 端口只绑定在宿主机的 `127.0.0.1:7700`，容器内的 HoloScoop 通过 `http://meilisearch:7700` 访问它。
+应用默认通过 `http://localhost:8080` 访问。Meilisearch 将宿主机的 `${MEILI_PORT:-7700}` 映射到容器端口 `7700`，容器内的 HoloScoop 通过 `http://meilisearch:7700` 访问它。
 
 应用镜像基于 .NET 10 Ubuntu 镜像构建，并安装 `yt-dlp`、`ffmpeg` 以及 YouTube 解析所需的 Deno JavaScript 运行时。Compose 将 `10.16.1.101:/volume1/media/Video/Hololive/library` 作为 NFS 卷挂载到容器内的 `/data/library`；临时工作目录 `/data/work` 和 Meilisearch 数据分别使用本地 Docker 卷 `work_data` 和 `meilisearch_data`。
 
 NAS 挂载参数由 `compose.yaml` 中的 `library_data` 卷配置统一管理。
+
+## 未来演进：本地说话人分离
+
+多人联动直播将来可以在现有字幕处理链路之后增加完全本地的说话人分离，用于区分“谁在什么时候说了什么”。这一能力不依赖云端语音 API、Hugging Face token 或 NVIDIA GPU：
+
+1. 使用 [WhisperX](https://github.com/m-bain/whisperX) 在 CPU 上完成日语转写、语音活动检测和词级时间对齐；不启用其需要 Hugging Face token 的 `--diarize` 流程。
+2. 使用 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 的公开 ONNX 模型在本地执行说话人分离，得到 `SPEAKER_00`、`SPEAKER_01` 等带时间范围的标签。
+3. 按时间重叠关系将 WhisperX 单词与说话人标签合并，再把说话人字段连同字幕分段写入 MSSQL，并重建 Meilisearch 索引。
+4. 每场直播可人工确认一次匿名标签与成员姓名的映射；将来如果积累了每位成员的干净参考音频，再考虑使用本地说话人嵌入进行自动声纹匹配。
+
+即使任务选择“仅下载字幕”，说话人分离仍需临时下载低码率音频；音频和模型中间结果应放在 `work/{TaskId}`，处理完成后删除。CPU 足以验证和运行这套链路，模型可优先选择 `small` 或 `medium` 并使用 `int8`；只有出现大量长直播积压时才考虑增加 CUDA GPU。
+
+第一版只承诺生成匿名说话人标签并支持人工映射，不假定能够自动识别真实姓名。两人同时讲话、唱歌、变声、强背景音乐和游戏音效都会降低分离与转写准确率；内容总结只能在说话人标注完成后进行，不能让语言模型根据台词猜测说话人。
 
 ## 暂不做
 

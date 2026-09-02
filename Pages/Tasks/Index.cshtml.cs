@@ -1,5 +1,6 @@
 using HoloScoop.Data;
 using HoloScoop.Data.Entities;
+using HoloScoop.Services.Media;
 using HoloScoop.Services.Note;
 using HoloScoop.Services.Redis;
 using Microsoft.AspNetCore.Mvc;
@@ -15,11 +16,13 @@ public sealed class IndexModel(
     ITaskCommands taskCommands,
     INoteScheduleLookup noteScheduleLookup,
     IIncomingTaskStore incomingTaskStore,
-    IOptions<RedisStreamOptions> redisOptions) : PageModel
+    IOptions<RedisStreamOptions> redisOptions,
+    ILocalMediaLibrary mediaLibrary) : PageModel
 {
     public IReadOnlyList<MediaTask> Candidates { get; private set; } = [];
     public IReadOnlyList<MediaTask> RecentTasks { get; private set; } = [];
     public IReadOnlyList<NoteScheduleSearchResult> ScheduleResults { get; private set; } = [];
+    public IReadOnlySet<long> LocalVideoStreamIds { get; private set; } = new HashSet<long>();
     public string? MemberQuery { get; private set; }
 
     [TempData]
@@ -36,11 +39,13 @@ public sealed class IndexModel(
         }
 
         var now = DateTimeOffset.UtcNow;
+        var selectionCutoff = now.AddHours(-1);
         Candidates = await dbContext.Tasks
             .AsNoTracking()
             .Include(task => task.Stream)
             .Where(task => task.Status == MediaTaskStatus.PendingSelection
-                && (task.ExpiresAt == null || task.ExpiresAt > now))
+                && (task.ExpiresAt == null || task.ExpiresAt > now)
+                && (task.Stream.StartedAt ?? task.Stream.ScheduledAt) <= selectionCutoff)
             .OrderBy(task => task.ExpiresAt)
             .ThenBy(task => task.CreatedAt)
             .ToListAsync(cancellationToken);
@@ -52,7 +57,14 @@ public sealed class IndexModel(
             .OrderByDescending(task => task.UpdatedAt)
             .Take(50)
             .ToListAsync(cancellationToken);
+        LocalVideoStreamIds = RecentTasks
+            .DistinctBy(task => task.StreamId)
+            .Where(task => mediaLibrary.FindVideo(task.Stream.ExternalId) is not null)
+            .Select(task => task.StreamId)
+            .ToHashSet();
     }
+
+    public bool HasLocalVideo(long streamId) => LocalVideoStreamIds.Contains(streamId);
 
     public async Task<IActionResult> OnPostAddManualAsync(
         Guid scheduleId,

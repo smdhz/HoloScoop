@@ -34,7 +34,7 @@ services:
       MEILI_MASTER_KEY: "${MEILI_MASTER_KEY:?Set MEILI_MASTER_KEY in .env}"
       MEILI_NO_ANALYTICS: "true"
     ports:
-      - "127.0.0.1:${MEILI_PORT:-7700}:7700"
+      - "${MEILI_PORT:-7700}:7700"
     volumes:
       - meilisearch_data:/meili_data
     healthcheck:
