@@ -34,6 +34,7 @@ body {
 .task-selection-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: .75rem;
 }
 
@@ -44,24 +45,6 @@ body {
 .task-source-link {
   justify-self: start;
   white-space: nowrap;
-}
-
-@media (min-width: 992px) {
-  .task-selection-form {
-    grid-template-columns: auto auto 1fr;
-    align-items: center;
-  }
-
-  .task-source-link {
-    justify-self: end;
-  }
-}
-
-@media (max-width: 575.98px) {
-  .task-speaker-options,
-  .task-selection-actions {
-    flex-wrap: wrap;
-  }
 }
 
 .recent-project-card {

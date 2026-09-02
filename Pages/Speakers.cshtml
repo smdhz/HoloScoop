@@ -1,7 +1,7 @@
 @page "/Speakers/{streamId:long}"
 @model HoloScoop.Pages.SpeakersModel
 @{
-    ViewData["Title"] = "说话人映射";
+    ViewData["Title"] = "发言人映射";
 }
 
 <div class="mb-3">
@@ -9,7 +9,7 @@
 </div>
 
 <div class="mb-4">
-    <h1 class="h4 mb-1">说话人映射</h1>
+    <h1 class="h4 mb-1">发言人映射</h1>
     <p class="text-secondary mb-0">@Model.Title</p>
 </div>
 
@@ -24,7 +24,7 @@
 
 @if (Model.Speakers.Count == 0)
 {
-    <div class="empty-state">这场直播还没有说话人分离结果。</div>
+    <div class="empty-state">这场直播还没有发言人分离结果。</div>
 }
 else
 {
@@ -38,7 +38,7 @@ else
     }
     else
     {
-        <div class="alert alert-warning">本地没有视频，暂时无法试听说话人样本。</div>
+        <div class="alert alert-warning">本地没有视频，暂时无法试听发言人样本。</div>
     }
     <div class="table-responsive">
         <table class="table align-middle">

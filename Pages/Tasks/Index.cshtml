@@ -94,7 +94,7 @@ else
                             <input type="hidden" name="id" value="@task.Id" />
                             <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(task.RowVersion)" />
                             <div class="task-speaker-options" role="group" aria-labelledby="speaker-label-@task.Id">
-                                <span id="speaker-label-@task.Id" class="small text-secondary text-nowrap">说话人：</span>
+                                <span id="speaker-label-@task.Id" class="small text-secondary text-nowrap">发言人：</span>
                                 <div class="form-check mb-0 text-nowrap">
                                     <input class="form-check-input" type="radio" name="speakerChoice" id="single-@task.Id" value="single" required />
                                     <label class="form-check-label" for="single-@task.Id">只有一个人</label>
@@ -105,14 +105,14 @@ else
                                 </div>
                                 <input class="form-control form-control-sm task-speaker-count" type="number"
                                        name="multipleSpeakerCount" min="2" max="20" inputmode="numeric"
-                                       aria-label="多人直播的说话人数" placeholder="人数" />
+                                       aria-label="多人直播的发言人数" placeholder="人数" />
                             </div>
                             <div class="task-selection-actions">
                                 <button class="btn btn-primary text-nowrap" type="submit" name="mode" value="VideoAndSubtitles">下载视频和字幕</button>
                                 <button class="btn btn-outline-primary text-nowrap" type="submit" name="mode" value="VideoOnly" formnovalidate>仅下载视频</button>
                                 <button class="btn btn-outline-secondary text-nowrap" type="submit" name="mode" value="SubtitlesOnly">仅下载字幕</button>
+                                <a class="btn btn-link task-source-link" href="@task.Stream.SourceUrl" target="_blank" rel="noopener">查看来源</a>
                             </div>
-                            <a class="btn btn-link task-source-link" href="@task.Stream.SourceUrl" target="_blank" rel="noopener">查看来源</a>
                         </form>
                     </div>
                 </article>
@@ -161,7 +161,7 @@ else
                     {
                         <a class="btn btn-sm btn-outline-primary"
                            asp-page="/Speakers"
-                           asp-route-streamId="@task.StreamId">说话人</a>
+                           asp-route-streamId="@task.StreamId">发言人</a>
                     }
                 </td>
             </tr>

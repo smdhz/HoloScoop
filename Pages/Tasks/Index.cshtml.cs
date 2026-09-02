@@ -123,7 +123,7 @@ public sealed class IndexModel(
         };
         if (mode != DownloadMode.VideoOnly && speakerCount == 0)
         {
-            StatusMessage = "请选择单人直播，或输入 2 到 20 的实际说话人数。";
+            StatusMessage = "请选择单人直播，或输入 2 到 20 的实际发言人数。";
             return RedirectToPage();
         }
 
