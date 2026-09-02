@@ -156,6 +156,21 @@ Redis Stream 只负责传递任务，不承担等待用户选择的状态。消�
 - 提供字幕关键词搜索，并能跳转到 YouTube 时间戳。
 - 落实普通直播不长期保存视频的默认策略。
 
+## Docker 部署
+
+`compose.yaml` 只启动 HoloScoop 和 Meilisearch。MSSQL 和 Redis 使用已有的外部实例，不由本项目的 Compose 创建。
+
+首次启动前复制环境变量示例并填写真实连接信息：
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build
+```
+
+应用默认通过 `http://localhost:8080` 访问。Meilisearch 端口只绑定在宿主机的 `127.0.0.1:7700`，容器内的 HoloScoop 通过 `http://meilisearch:7700` 访问它。
+
+应用镜像基于 .NET 10 Ubuntu 镜像构建，并安装 `yt-dlp`、`ffmpeg` 以及 YouTube 解析所需的 Deno JavaScript 运行时。下载的媒体保存在 Docker 命名卷 `media_data` 中，Meilisearch 数据保存在 `meilisearch_data` 中。
+
 ## 暂不做
 
 - 不做 embedding 或向量检索。

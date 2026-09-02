@@ -1,0 +1,47 @@
+name: holoscoop
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: holoscoop:local
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: "${ASPNETCORE_ENVIRONMENT:-Production}"
+      ConnectionStrings__DefaultConnection: "${MSSQL_CONNECTION_STRING:?Set MSSQL_CONNECTION_STRING in .env}"
+      Redis__ConnectionString: "${REDIS_CONNECTION_STRING:?Set REDIS_CONNECTION_STRING in .env}"
+      Redis__StreamName: "${REDIS_STREAM_NAME:-holoscoop:tasks}"
+      Meilisearch__Url: "http://meilisearch:7700"
+      Meilisearch__MasterKey: "${MEILI_MASTER_KEY:?Set MEILI_MASTER_KEY in .env}"
+      Media__RootPath: "/data/media"
+    volumes:
+      - media_data:/data/media
+    depends_on:
+      meilisearch:
+        condition: service_healthy
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.37
+    restart: unless-stopped
+    environment:
+      MEILI_ENV: "production"
+      MEILI_MASTER_KEY: "${MEILI_MASTER_KEY:?Set MEILI_MASTER_KEY in .env}"
+      MEILI_NO_ANALYTICS: "true"
+    ports:
+      - "127.0.0.1:${MEILI_PORT:-7700}:7700"
+    volumes:
+      - meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  media_data:
+  meilisearch_data:

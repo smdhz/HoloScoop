@@ -1,0 +1,14 @@
+.git
+.gitignore
+.env
+.agents
+.codex
+bin
+obj
+media
+**/*.user
+**/*.suo
+Dockerfile*
+compose*.yaml
+compose*.yml
+README.md
