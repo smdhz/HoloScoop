@@ -211,9 +211,19 @@ docker compose up -d --build
 
 首次部署还需要由具备建表权限的账号执行 [`database/schema.sql`](database/schema.sql)。开发环境默认关闭 Redis Consumer 和 Quartz 作业，避免缺少外部服务时反复重试；生产环境默认启用。
 
+在本机试运行且暂时不挂载 NAS 时，使用本地卷覆盖文件：
+
+```powershell
+docker compose -f compose.yaml -f compose.local.yaml up -d --build
+```
+
+正式 `compose.yaml` 固定使用 `Production`、NAS NFS、Redis Consumer 和 Quartz。`compose.local.yaml` 将应用覆盖为 `Development` 并使用本地 `library_data`；开发配置默认关闭 Redis Consumer 和 Quartz，避免依赖外部任务源。
+
 应用默认通过 `http://localhost:8080` 访问。Meilisearch 端口只绑定在宿主机的 `127.0.0.1:7700`，容器内的 HoloScoop 通过 `http://meilisearch:7700` 访问它。
 
 应用镜像基于 .NET 10 Ubuntu 镜像构建，并安装 `yt-dlp`、`ffmpeg` 以及 YouTube 解析所需的 Deno JavaScript 运行时。Compose 将 `10.16.1.101:/volume1/media/Video/Hololive` 作为 NFS 卷挂载到容器内的 `/data/library`，长期文件直接保存在该目录；临时工作目录 `/data/work` 和 Meilisearch 数据分别使用本地 Docker 卷 `work_data` 和 `meilisearch_data`。
+
+NAS 挂载参数由 `compose.yaml` 中的 `library_data` 卷配置统一管理。
 
 ## 暂不做
 

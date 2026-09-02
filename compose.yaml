@@ -11,7 +11,7 @@ services:
     ports:
       - "${APP_PORT:-8080}:8080"
     environment:
-      ASPNETCORE_ENVIRONMENT: "${ASPNETCORE_ENVIRONMENT:-Production}"
+      ASPNETCORE_ENVIRONMENT: "Production"
       ConnectionStrings__DefaultConnection: "${MSSQL_CONNECTION_STRING:?Set MSSQL_CONNECTION_STRING in .env}"
       Redis__ConnectionString: "${REDIS_CONNECTION_STRING:?Set REDIS_CONNECTION_STRING in .env}"
       Redis__StreamName: "${REDIS_STREAM_NAME:-holoscoop:tasks}"
@@ -49,7 +49,7 @@ volumes:
     driver: local
     driver_opts:
       type: nfs
-      o: "addr=10.16.1.101,rw,nfsvers=3"
+      o: "addr=10.16.1.101,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14"
       device: ":/volume1/media/Video/Hololive"
   work_data:
   meilisearch_data:

@@ -34,8 +34,10 @@ ENV PATH="/opt/yt-dlp/bin:${PATH}" \
     ASPNETCORE_URLS="http://+:8080"
 
 COPY --from=build --chown=app:app /app/publish ./
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
 
-USER app
 EXPOSE 8080
 
-ENTRYPOINT ["dotnet", "HoloScoop.dll"]
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["dotnet", "HoloScoop.dll"]

@@ -1,0 +1,12 @@
+# Local smoke-test override. The normal compose.yaml keeps using the NAS NFS volume.
+volumes:
+  library_data:
+    name: holoscoop_library_local
+    driver: local
+    driver_opts: !reset {}
+
+services:
+  app:
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      INITIALIZE_LIBRARY_PERMISSIONS: "true"
