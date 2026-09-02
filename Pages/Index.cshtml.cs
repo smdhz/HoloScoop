@@ -10,8 +10,7 @@ namespace HoloScoop.Pages;
 
 public sealed class IndexModel(
     HoloScoopDbContext dbContext,
-    IOptions<MediaProcessingOptions> mediaOptions,
-    ILocalMediaLibrary mediaLibrary) : PageModel
+    IOptions<MediaProcessingOptions> mediaOptions) : PageModel
 {
     private static readonly IReadOnlyDictionary<string, string> ThumbnailContentTypes =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -35,6 +34,13 @@ public sealed class IndexModel(
             .OrderByDescending(task => task.UpdatedAt)
             .Take(50)
             .ToListAsync(cancellationToken);
+        var completedStreamIds = completedTasks.Select(task => task.StreamId).Distinct().ToArray();
+        var downloadedStreamIds = (await dbContext.DownloadedVideos
+            .AsNoTracking()
+            .Where(video => completedStreamIds.Contains(video.StreamId))
+            .Select(video => video.StreamId)
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
 
         RecentProjects = completedTasks
             .DistinctBy(task => task.StreamId)
@@ -47,7 +53,7 @@ public sealed class IndexModel(
                 task.Stream.ThumbnailUrl,
                 task.UpdatedAt,
                 HasLocalThumbnail(task.Stream.ExternalId),
-                mediaLibrary.FindVideo(task.Stream.ExternalId) is not null))
+                downloadedStreamIds.Contains(task.StreamId)))
             .ToList();
     }
 

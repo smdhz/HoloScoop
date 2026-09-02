@@ -9,6 +9,7 @@ public sealed class HoloScoopDbContext(DbContextOptions<HoloScoopDbContext> opti
 {
     public DbSet<MediaStream> Streams => Set<MediaStream>();
     public DbSet<MediaTask> Tasks => Set<MediaTask>();
+    public DbSet<DownloadedVideo> DownloadedVideos => Set<DownloadedVideo>();
     public DbSet<SubtitleSegment> SubtitleSegments => Set<SubtitleSegment>();
     public DbSet<SpeakerTurn> SpeakerTurns => Set<SpeakerTurn>();
     public DbSet<VoiceProfile> VoiceProfiles => Set<VoiceProfile>();

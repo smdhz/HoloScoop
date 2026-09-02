@@ -19,7 +19,7 @@ public interface ITaskCommands
     Task<QueueTaskResult> QueueAsync(
         long taskId,
         DownloadMode downloadMode,
-        int speakerCount,
+        int? speakerCount,
         byte[] expectedRowVersion,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
@@ -34,12 +34,12 @@ public sealed class TaskCommands(HoloScoopDbContext dbContext) : ITaskCommands
     public async Task<QueueTaskResult> QueueAsync(
         long taskId,
         DownloadMode downloadMode,
-        int speakerCount,
+        int? speakerCount,
         byte[] expectedRowVersion,
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
-        if (speakerCount is < 1 or > 20)
+        if (downloadMode != DownloadMode.VideoOnly && speakerCount is not (>= 1 and <= 20))
         {
             throw new ArgumentOutOfRangeException(nameof(speakerCount), "Speaker count must be between 1 and 20.");
         }
@@ -76,8 +76,12 @@ public sealed class TaskCommands(HoloScoopDbContext dbContext) : ITaskCommands
         }
 
         task.DownloadMode = downloadMode;
-        task.SpeakerCount = speakerCount;
-        if (speakerCount == 1)
+        task.SpeakerCount = downloadMode == DownloadMode.VideoOnly ? null : speakerCount;
+        if (downloadMode == DownloadMode.VideoOnly)
+        {
+            task.SpeakerNamesJson = null;
+        }
+        else if (speakerCount == 1)
         {
             if (string.IsNullOrWhiteSpace(task.ScheduledMemberName))
             {

@@ -21,6 +21,7 @@ public sealed class TaskStateMachine(HoloScoopDbContext dbContext) : ITaskStateM
         (MediaTaskStatus.PendingSelection, MediaTaskStatus.Queued),
         (MediaTaskStatus.PendingSelection, MediaTaskStatus.Expired),
         (MediaTaskStatus.Queued, MediaTaskStatus.Downloading),
+        (MediaTaskStatus.Downloading, MediaTaskStatus.Completed),
         (MediaTaskStatus.Downloading, MediaTaskStatus.ParsingSubtitles),
         (MediaTaskStatus.ParsingSubtitles, MediaTaskStatus.Diarizing),
         (MediaTaskStatus.Diarizing, MediaTaskStatus.Indexing),

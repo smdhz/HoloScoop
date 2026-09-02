@@ -19,6 +19,7 @@ public sealed class Stream
     public DateTimeOffset UpdatedAt { get; set; }
 
     public ICollection<MediaTask> Tasks { get; } = new List<MediaTask>();
+    public ICollection<DownloadedVideo> DownloadedVideos { get; } = new List<DownloadedVideo>();
     public ICollection<SubtitleSegment> SubtitleSegments { get; } = new List<SubtitleSegment>();
     public ICollection<SpeakerTurn> SpeakerTurns { get; } = new List<SpeakerTurn>();
 }

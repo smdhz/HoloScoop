@@ -16,8 +16,7 @@ public sealed class IndexModel(
     ITaskCommands taskCommands,
     INoteScheduleLookup noteScheduleLookup,
     IIncomingTaskStore incomingTaskStore,
-    IOptions<RedisStreamOptions> redisOptions,
-    ILocalMediaLibrary mediaLibrary) : PageModel
+    IOptions<RedisStreamOptions> redisOptions) : PageModel
 {
     public IReadOnlyList<MediaTask> Candidates { get; private set; } = [];
     public IReadOnlyList<MediaTask> RecentTasks { get; private set; } = [];
@@ -50,17 +49,31 @@ public sealed class IndexModel(
             .ThenBy(task => task.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        RecentTasks = await dbContext.Tasks
+        var recentIncompleteTasks = await dbContext.Tasks
             .AsNoTracking()
             .Include(task => task.Stream)
-            .Where(task => task.Status != MediaTaskStatus.PendingSelection)
+            .Where(task => task.Status != MediaTaskStatus.PendingSelection &&
+                           task.Status != MediaTaskStatus.Completed)
             .OrderByDescending(task => task.UpdatedAt)
             .Take(50)
             .ToListAsync(cancellationToken);
-        LocalVideoStreamIds = RecentTasks
-            .DistinctBy(task => task.StreamId)
-            .Where(task => mediaLibrary.FindVideo(task.Stream.ExternalId) is not null)
-            .Select(task => task.StreamId)
+        var recentCompletedTasks = await dbContext.Tasks
+            .AsNoTracking()
+            .Include(task => task.Stream)
+            .Where(task => task.Status == MediaTaskStatus.Completed)
+            .OrderByDescending(task => task.UpdatedAt)
+            .Take(3)
+            .ToListAsync(cancellationToken);
+        RecentTasks = recentIncompleteTasks
+            .Concat(recentCompletedTasks)
+            .OrderByDescending(task => task.UpdatedAt)
+            .ToList();
+        var recentStreamIds = RecentTasks.Select(task => task.StreamId).Distinct().ToArray();
+        LocalVideoStreamIds = (await dbContext.DownloadedVideos
+            .AsNoTracking()
+            .Where(video => recentStreamIds.Contains(video.StreamId))
+            .Select(video => video.StreamId)
+            .ToListAsync(cancellationToken))
             .ToHashSet();
     }
 
@@ -95,18 +108,20 @@ public sealed class IndexModel(
     public async Task<IActionResult> OnPostSelectAsync(
         long id,
         DownloadMode mode,
-        string speakerChoice,
+        string? speakerChoice,
         int? multipleSpeakerCount,
         string rowVersion,
         CancellationToken cancellationToken)
     {
-        var speakerCount = speakerChoice switch
+        int? speakerCount = mode == DownloadMode.VideoOnly
+            ? null
+            : speakerChoice switch
         {
             "single" => 1,
             "multiple" when multipleSpeakerCount is >= 2 and <= 20 => multipleSpeakerCount.Value,
             _ => 0
         };
-        if (speakerCount == 0)
+        if (mode != DownloadMode.VideoOnly && speakerCount == 0)
         {
             StatusMessage = "请选择单人直播，或输入 2 到 20 的实际说话人数。";
             return RedirectToPage();
@@ -126,6 +141,7 @@ public sealed class IndexModel(
             id, mode, speakerCount, expectedVersion, DateTimeOffset.UtcNow, cancellationToken);
         StatusMessage = result switch
         {
+            QueueTaskResult.Queued when mode == DownloadMode.VideoOnly => "已加入仅视频下载队列。",
             QueueTaskResult.Queued when mode == DownloadMode.SubtitlesOnly => "已加入仅字幕下载队列。",
             QueueTaskResult.Queued => "已加入视频和字幕下载队列。",
             QueueTaskResult.Expired => "该候选任务已经过期。",

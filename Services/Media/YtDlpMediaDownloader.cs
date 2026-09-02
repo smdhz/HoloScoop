@@ -112,11 +112,13 @@ public sealed class YtDlpMediaDownloader(
             throw new MediaDownloadException($"Unable to launch yt-dlp at '{_options.YtDlpPath}': {exception.Message}");
         }
 
-        var diarizationAudioPath = await PrepareDiarizationAudioAsync(
-            workDirectory,
-            request,
-            existingVideoPath,
-            timeout.Token);
+        var diarizationAudioPath = request.Mode == DownloadMode.VideoOnly
+            ? string.Empty
+            : await PrepareDiarizationAudioAsync(
+                workDirectory,
+                request,
+                existingVideoPath,
+                timeout.Token);
         var result = await PromoteArtifactsAsync(
             workDirectory,
             libraryDirectory,
@@ -151,15 +153,20 @@ public sealed class YtDlpMediaDownloader(
             "--no-playlist",
             "--no-progress",
             "--ignore-errors",
-            "--write-info-json",
-            "--write-thumbnail",
-            "--write-subs",
-            "--write-auto-subs",
-            "--sub-format", "vtt",
-            "--sub-langs", string.Join(',', _options.SubtitleLanguages),
-            "--sleep-subtitles", "5",
             "--retry-sleep", "http:exp=1:20",
             "--output", $"{request.ExternalId}.%(ext)s");
+
+        if (request.Mode != DownloadMode.VideoOnly)
+        {
+            AddArguments(info,
+                "--write-info-json",
+                "--write-thumbnail",
+                "--write-subs",
+                "--write-auto-subs",
+                "--sub-format", "vtt",
+                "--sub-langs", string.Join(',', _options.SubtitleLanguages),
+                "--sleep-subtitles", "5");
+        }
 
         if (skipMediaDownload)
         {
@@ -169,7 +176,7 @@ public sealed class YtDlpMediaDownloader(
         {
             AddArguments(info, "--format", "ba/b");
         }
-        else if (request.Mode == DownloadMode.VideoAndSubtitles)
+        else if (request.Mode is DownloadMode.VideoAndSubtitles or DownloadMode.VideoOnly)
         {
             AddArguments(info, "--format", "bv*+ba/b");
         }

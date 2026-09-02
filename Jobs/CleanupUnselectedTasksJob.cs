@@ -38,6 +38,7 @@ public sealed class CleanupUnselectedTasksJob(
             var streamCount = await dbContext.Streams
                 .Where(stream => stream.CreatedAt < unselectedCutoff &&
                                  !stream.Tasks.Any() &&
+                                 !stream.DownloadedVideos.Any() &&
                                  !stream.SubtitleSegments.Any())
                 .ExecuteDeleteAsync(context.CancellationToken);
 

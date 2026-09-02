@@ -38,10 +38,13 @@ public sealed class MediaTaskProcessor(
 
         var mode = task.DownloadMode
             ?? throw new InvalidOperationException($"Media task {taskId} has no download mode.");
-        var speakerCount = task.SpeakerCount
-            ?? throw new InvalidOperationException($"Media task {taskId} has no confirmed speaker count.");
+        var speakerCount = task.SpeakerCount;
         var speakerNames = ParseSpeakerNames(task.SpeakerNamesJson);
-        if (speakerCount == 1 && speakerNames.Count != 1)
+        if (mode != DownloadMode.VideoOnly && speakerCount is null)
+        {
+            throw new InvalidOperationException($"Media task {taskId} has no confirmed speaker count.");
+        }
+        if (mode != DownloadMode.VideoOnly && speakerCount == 1 && speakerNames.Count != 1)
         {
             throw new InvalidOperationException($"Single-speaker task {taskId} has no confirmed member name.");
         }
@@ -54,11 +57,29 @@ public sealed class MediaTaskProcessor(
             new MediaDownloadRequest(task.Id, task.Stream.ExternalId, sourceUrl, mode),
             cancellationToken);
 
-        if (mode == DownloadMode.VideoAndSubtitles && result.VideoRelativePaths.Count == 0)
+        if ((mode is DownloadMode.VideoAndSubtitles or DownloadMode.VideoOnly) &&
+            result.VideoRelativePaths.Count == 0)
         {
             throw new MediaDownloadException(
                 $"yt-dlp returned no video file for media {task.Stream.ExternalId}.");
         }
+
+        if ((mode is DownloadMode.VideoAndSubtitles or DownloadMode.VideoOnly) &&
+            result.VideoRelativePaths.Count > 0)
+        {
+            await RecordDownloadedVideoAsync(task.StreamId, cancellationToken);
+        }
+
+        if (mode == DownloadMode.VideoOnly)
+        {
+            task.Status = TaskStatus.Completed;
+            task.LastError = null;
+            await dbContext.SaveChangesAsync(cancellationToken);
+            CleanupWorkDirectory(task.Id, logger);
+            return;
+        }
+
+        var confirmedSpeakerCount = speakerCount!.Value;
 
         task.Status = TaskStatus.ParsingSubtitles;
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -127,7 +148,7 @@ public sealed class MediaTaskProcessor(
         {
             var turns = await speakerDiarizer.DiarizeAsync(
                 result.DiarizationAudioPath,
-                speakerCount,
+                confirmedSpeakerCount,
                 cancellationToken);
             if (turns.Count == 0)
             {
@@ -147,7 +168,7 @@ public sealed class MediaTaskProcessor(
                     Dimension = embedding.Length
                 });
             }
-            var suggestions = speakerCount > 1
+            var suggestions = confirmedSpeakerCount > 1
                 ? await MatchVoiceProfilesAsync(embeddings, speakerNames, cancellationToken)
                 : new Dictionary<string, VoiceSuggestion>(StringComparer.Ordinal);
 
@@ -158,7 +179,7 @@ public sealed class MediaTaskProcessor(
                 {
                     StreamId = task.StreamId,
                     SpeakerLabel = turn.SpeakerLabel,
-                    SpeakerName = speakerCount == 1 ? speakerNames[0] : null,
+                    SpeakerName = confirmedSpeakerCount == 1 ? speakerNames[0] : null,
                     SuggestedSpeakerName = suggestion?.MemberName,
                     SuggestedSpeakerScore = suggestion?.Score,
                     StartMs = turn.StartMs,
@@ -170,7 +191,7 @@ public sealed class MediaTaskProcessor(
                 .Where(segment => segment.StreamId == task.StreamId)
                 .ToListAsync(cancellationToken);
             AssignSpeakerLabels(segments, turns, _diarizationOptions.MinimumSubtitleOverlapRatio);
-            if (speakerCount == 1)
+            if (confirmedSpeakerCount == 1)
             {
                 foreach (var segment in segments.Where(segment => segment.SpeakerLabel != null))
                 {
@@ -216,6 +237,24 @@ public sealed class MediaTaskProcessor(
         task.LastError = null;
         await dbContext.SaveChangesAsync(cancellationToken);
         CleanupWorkDirectory(task.Id, logger);
+    }
+
+    private async Task RecordDownloadedVideoAsync(
+        long streamId,
+        CancellationToken cancellationToken)
+    {
+        var exists = await dbContext.DownloadedVideos
+            .AnyAsync(video => video.StreamId == streamId, cancellationToken);
+        if (!exists)
+        {
+            dbContext.DownloadedVideos.Add(new DownloadedVideo
+            {
+                StreamId = streamId,
+                DownloadedAt = DateTimeOffset.UtcNow
+            });
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<IReadOnlyDictionary<string, VoiceSuggestion>> MatchVoiceProfilesAsync(

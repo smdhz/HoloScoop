@@ -10,8 +10,7 @@ namespace HoloScoop.Pages.Search;
 public sealed class IndexModel(
     ISubtitleSearchService searchService,
     ISearchIndexRebuilder indexRebuilder,
-    HoloScoopDbContext dbContext,
-    ILocalMediaLibrary mediaLibrary) : PageModel
+    HoloScoopDbContext dbContext) : PageModel
 {
     [BindProperty(SupportsGet = true, Name = "q")]
     public string Query { get; set; } = string.Empty;
@@ -43,14 +42,11 @@ public sealed class IndexModel(
                 Speaker,
                 cancellationToken: cancellationToken);
             var streamIds = Result.Hits.Select(hit => hit.StreamId).Distinct().ToArray();
-            var streams = await dbContext.Streams
+            LocalVideoStreamIds = (await dbContext.DownloadedVideos
                 .AsNoTracking()
-                .Where(stream => streamIds.Contains(stream.Id))
-                .Select(stream => new { stream.Id, stream.ExternalId })
-                .ToListAsync(cancellationToken);
-            LocalVideoStreamIds = streams
-                .Where(stream => mediaLibrary.FindVideo(stream.ExternalId) is not null)
-                .Select(stream => stream.Id)
+                .Where(video => streamIds.Contains(video.StreamId))
+                .Select(video => video.StreamId)
+                .ToListAsync(cancellationToken))
                 .ToHashSet();
         }
         catch (HttpRequestException)

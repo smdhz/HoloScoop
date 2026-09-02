@@ -71,7 +71,7 @@ BEGIN
         CONSTRAINT CK_Tasks_DownloadMode CHECK
         (
             DownloadMode IS NULL
-            OR DownloadMode IN ('VideoAndSubtitles', 'SubtitlesOnly')
+            OR DownloadMode IN ('VideoAndSubtitles', 'SubtitlesOnly', 'VideoOnly')
         ),
         CONSTRAINT CK_Tasks_Status CHECK
         (
@@ -91,6 +91,23 @@ BEGIN
         CONSTRAINT CK_Tasks_AttemptCount CHECK (AttemptCount >= 0)
     );
 END;
+
+IF EXISTS
+(
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE parent_object_id = OBJECT_ID(N'dbo.Tasks')
+      AND name = N'CK_Tasks_DownloadMode'
+)
+BEGIN
+    ALTER TABLE dbo.Tasks DROP CONSTRAINT CK_Tasks_DownloadMode;
+END;
+
+ALTER TABLE dbo.Tasks WITH CHECK ADD CONSTRAINT CK_Tasks_DownloadMode CHECK
+(
+    DownloadMode IS NULL
+    OR DownloadMode IN ('VideoAndSubtitles', 'SubtitlesOnly', 'VideoOnly')
+);
 
 IF COL_LENGTH(N'dbo.Tasks', N'SpeakerCount') IS NULL
 BEGIN
@@ -190,6 +207,57 @@ BEGIN
     CREATE INDEX IX_Tasks_StreamId
         ON dbo.Tasks (StreamId);
 END;
+
+IF OBJECT_ID(N'dbo.DownloadedVideos', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.DownloadedVideos
+    (
+        Id            bigint IDENTITY(1, 1) NOT NULL,
+        StreamId      bigint                 NOT NULL,
+        DownloadedAt  datetimeoffset(3)      NOT NULL,
+
+        CONSTRAINT PK_DownloadedVideos PRIMARY KEY CLUSTERED (Id),
+        CONSTRAINT FK_DownloadedVideos_Streams_StreamId FOREIGN KEY (StreamId)
+            REFERENCES dbo.Streams (Id)
+    );
+END;
+
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.DownloadedVideos')
+      AND name = N'UX_DownloadedVideos_StreamId'
+)
+BEGIN
+    CREATE UNIQUE INDEX UX_DownloadedVideos_StreamId
+        ON dbo.DownloadedVideos (StreamId);
+END;
+
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.DownloadedVideos')
+      AND name = N'IX_DownloadedVideos_DownloadedAt'
+)
+BEGIN
+    CREATE INDEX IX_DownloadedVideos_DownloadedAt
+        ON dbo.DownloadedVideos (DownloadedAt DESC);
+END;
+
+INSERT INTO dbo.DownloadedVideos (StreamId, DownloadedAt)
+SELECT task.StreamId, MAX(task.UpdatedAt)
+FROM dbo.Tasks AS task
+WHERE task.Status = 'Completed'
+  AND task.DownloadMode = 'VideoAndSubtitles'
+  AND NOT EXISTS
+  (
+      SELECT 1
+      FROM dbo.DownloadedVideos AS video
+      WHERE video.StreamId = task.StreamId
+  )
+GROUP BY task.StreamId;
 
 IF OBJECT_ID(N'dbo.SubtitleSegments', N'U') IS NULL
 BEGIN

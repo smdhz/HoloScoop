@@ -1,0 +1,94 @@
+@page
+@model HoloScoop.Pages.Videos.IndexModel
+@{
+    ViewData["Title"] = "已下载视频";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+    <div>
+        <h1 class="h4 mb-1">已下载视频</h1>
+        <p class="text-secondary mb-0">仅显示成功下载过视频的直播，不包含仅字幕任务。</p>
+    </div>
+    <a class="btn btn-outline-secondary" asp-page="/Videos/Index">刷新</a>
+</div>
+
+<form method="get" class="row g-2 mb-4">
+    <div class="col-md">
+        <label class="visually-hidden" for="q">检索视频</label>
+        <input id="q" class="form-control" name="q" value="@Model.Query"
+               placeholder="按标题、主播或视频 ID 检索" />
+    </div>
+    <div class="col-md-auto">
+        <button class="btn btn-primary w-100" type="submit">检索</button>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(Model.Query))
+    {
+        <div class="col-md-auto">
+            <a class="btn btn-outline-secondary w-100" asp-page="/Videos/Index">清除</a>
+        </div>
+    }
+</form>
+
+@if (Model.Videos.Count == 0)
+{
+    <div class="empty-state">
+        @(string.IsNullOrWhiteSpace(Model.Query) ? "还没有已下载的视频。" : "没有找到匹配的视频。")
+    </div>
+}
+else
+{
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-4">
+        @foreach (var video in Model.Videos)
+        {
+            <div class="col">
+                <article class="card h-100 overflow-hidden recent-project-card">
+                    <a asp-page="/Watch" asp-route-streamId="@video.StreamId" class="text-decoration-none">
+                        @if (!string.IsNullOrWhiteSpace(video.ThumbnailUrl))
+                        {
+                            <img class="card-img-top recent-project-thumbnail"
+                                 src="@video.ThumbnailUrl" alt="" loading="lazy" />
+                        }
+                        else
+                        {
+                            <div class="recent-project-thumbnail recent-project-thumbnail-placeholder"></div>
+                        }
+                    </a>
+                    <div class="card-body">
+                        <h2 class="h6 card-title mb-2">
+                            <a asp-page="/Watch" asp-route-streamId="@video.StreamId"
+                               class="text-reset text-decoration-none">@video.Title</a>
+                        </h2>
+                        @if (!string.IsNullOrWhiteSpace(video.ChannelName))
+                        {
+                            <div class="small text-secondary text-truncate">@video.ChannelName</div>
+                        }
+                        <div class="small text-secondary text-truncate">@video.ExternalId</div>
+                    </div>
+                    <div class="card-footer d-flex justify-content-between align-items-center gap-2 bg-transparent border-0 pt-0">
+                        <span class="small text-secondary">@video.DownloadedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                        <a class="small" href="@video.SourceUrl" target="_blank" rel="noopener">来源</a>
+                    </div>
+                </article>
+            </div>
+        }
+    </div>
+
+    @if (Model.TotalPages > 1)
+    {
+        <nav class="d-flex justify-content-center align-items-center gap-3 mt-4" aria-label="视频分页">
+            @if (Model.PageNumber > 1)
+            {
+                <a class="btn btn-outline-secondary"
+                   asp-page="/Videos/Index" asp-route-q="@Model.Query"
+                   asp-route-p="@(Model.PageNumber - 1)">上一页</a>
+            }
+            <span class="text-secondary">第 @Model.PageNumber / @Model.TotalPages 页</span>
+            @if (Model.PageNumber < Model.TotalPages)
+            {
+                <a class="btn btn-outline-secondary"
+                   asp-page="/Videos/Index" asp-route-q="@Model.Query"
+                   asp-route-p="@(Model.PageNumber + 1)">下一页</a>
+            }
+        </nav>
+    }
+}
