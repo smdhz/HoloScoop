@@ -102,28 +102,50 @@ else
             if (!player) return;
 
             let stopAt = null;
-            player.addEventListener('timeupdate', () => {
-                if (stopAt !== null && player.currentTime >= stopAt) {
+            let activeSample = 0;
+
+            const stopIfReached = token => {
+                if (token === activeSample && stopAt !== null && player.currentTime >= stopAt - 0.05) {
                     player.pause();
                     stopAt = null;
+                    return true;
                 }
-            });
+                return false;
+            };
+
+            const monitorFrames = token => {
+                if (token !== activeSample || stopAt === null || stopIfReached(token)) return;
+                if ('requestVideoFrameCallback' in player) {
+                    player.requestVideoFrameCallback(() => monitorFrames(token));
+                } else {
+                    requestAnimationFrame(() => monitorFrames(token));
+                }
+            };
+
+            player.addEventListener('timeupdate', () => stopIfReached(activeSample));
+            window.setInterval(() => stopIfReached(activeSample), 100);
 
             document.querySelectorAll('.speaker-sample').forEach(button => {
                 button.addEventListener('click', async () => {
                     const start = Number(button.dataset.start);
                     const end = Number(button.dataset.end);
-                    if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+                    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
 
-                    const beginPlayback = async () => {
+                    const token = ++activeSample;
+
+                    const beginPlayback = () => {
+                        if (token !== activeSample) return;
+                        player.pause();
                         player.currentTime = start;
                         stopAt = end;
                         player.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        await player.play();
+                        player.play()
+                            .then(() => monitorFrames(token))
+                            .catch(() => { if (token === activeSample) stopAt = null; });
                     };
 
                     if (player.readyState >= HTMLMediaElement.HAVE_METADATA) {
-                        await beginPlayback();
+                        beginPlayback();
                     } else {
                         player.addEventListener('loadedmetadata', beginPlayback, { once: true });
                         player.load();

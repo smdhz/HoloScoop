@@ -90,24 +90,28 @@ else
                         </div>
                     </div>
                     <div class="card-footer">
-                        <form method="post" asp-page-handler="Select" class="d-flex flex-wrap align-items-center gap-2">
+                        <form method="post" asp-page-handler="Select" class="task-selection-form">
                             <input type="hidden" name="id" value="@task.Id" />
                             <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(task.RowVersion)" />
-                            <span class="small text-secondary">说话人：</span>
-                            <div class="form-check form-check-inline mb-0">
-                                <input class="form-check-input" type="radio" name="speakerChoice" id="single-@task.Id" value="single" required />
-                                <label class="form-check-label" for="single-@task.Id">只有一个人</label>
+                            <div class="task-speaker-options" role="group" aria-labelledby="speaker-label-@task.Id">
+                                <span id="speaker-label-@task.Id" class="small text-secondary text-nowrap">说话人：</span>
+                                <div class="form-check mb-0 text-nowrap">
+                                    <input class="form-check-input" type="radio" name="speakerChoice" id="single-@task.Id" value="single" required />
+                                    <label class="form-check-label" for="single-@task.Id">只有一个人</label>
+                                </div>
+                                <div class="form-check mb-0 text-nowrap">
+                                    <input class="form-check-input" type="radio" name="speakerChoice" id="multiple-@task.Id" value="multiple" required />
+                                    <label class="form-check-label" for="multiple-@task.Id">多人</label>
+                                </div>
+                                <input class="form-control form-control-sm task-speaker-count" type="number"
+                                       name="multipleSpeakerCount" min="2" max="20" inputmode="numeric"
+                                       aria-label="多人直播的说话人数" placeholder="人数" />
                             </div>
-                            <div class="form-check form-check-inline mb-0">
-                                <input class="form-check-input" type="radio" name="speakerChoice" id="multiple-@task.Id" value="multiple" required />
-                                <label class="form-check-label" for="multiple-@task.Id">多人</label>
+                            <div class="task-selection-actions">
+                                <button class="btn btn-primary text-nowrap" type="submit" name="mode" value="VideoAndSubtitles">下载视频和字幕</button>
+                                <button class="btn btn-outline-secondary text-nowrap" type="submit" name="mode" value="SubtitlesOnly">仅下载字幕</button>
                             </div>
-                            <input class="form-control form-control-sm" style="width: 6rem" type="number"
-                                   name="multipleSpeakerCount" min="2" max="20" inputmode="numeric"
-                                   aria-label="多人直播的说话人数" placeholder="人数" />
-                            <button class="btn btn-primary" type="submit" name="mode" value="VideoAndSubtitles">下载视频和字幕</button>
-                            <button class="btn btn-outline-secondary" type="submit" name="mode" value="SubtitlesOnly">仅下载字幕</button>
-                            <a class="btn btn-link ms-auto" href="@task.Stream.SourceUrl" target="_blank" rel="noopener">查看来源</a>
+                            <a class="btn btn-link task-source-link" href="@task.Stream.SourceUrl" target="_blank" rel="noopener">查看来源</a>
                         </form>
                     </div>
                 </article>

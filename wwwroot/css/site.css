@@ -25,6 +25,45 @@ body {
   border-radius: .5rem;
 }
 
+.task-selection-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.task-speaker-options,
+.task-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+
+.task-speaker-count {
+  width: 6rem;
+}
+
+.task-source-link {
+  justify-self: start;
+  white-space: nowrap;
+}
+
+@media (min-width: 992px) {
+  .task-selection-form {
+    grid-template-columns: auto auto 1fr;
+    align-items: center;
+  }
+
+  .task-source-link {
+    justify-self: end;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .task-speaker-options,
+  .task-selection-actions {
+    flex-wrap: wrap;
+  }
+}
+
 .recent-project-card {
   transition: transform .15s ease, box-shadow .15s ease;
 }
