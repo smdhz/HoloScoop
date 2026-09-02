@@ -33,8 +33,19 @@ var app = builder.Build();
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<HoloScoopDbContext>();
+    var noteDbContext = scope.ServiceProvider.GetRequiredService<NoteScheduleDbContext>();
+    var speakerNameCatalog = scope.ServiceProvider.GetRequiredService<SpeakerNameCatalog>();
     var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
         .CreateLogger("StartupTaskRecovery");
+    var speakerNames = await noteDbContext.HololiveSchedule
+        .AsNoTracking()
+        .Select(item => item.MemberName)
+        .Distinct()
+        .ToListAsync();
+    speakerNameCatalog.Initialize(speakerNames);
+    logger.LogInformation(
+        "Loaded {SpeakerNameCount} speaker name(s) during application startup.",
+        speakerNameCatalog.Names.Count);
     var recovered = await InterruptedTaskRecovery.RequeueAsync(dbContext);
     if (recovered > 0)
     {

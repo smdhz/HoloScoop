@@ -1,6 +1,7 @@
 using HoloScoop.Data;
 using HoloScoop.Search;
 using HoloScoop.Services.Media;
+using HoloScoop.Services.Note;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
@@ -21,15 +22,20 @@ public sealed record SpeakerSample(long StartMs, long EndMs, string? Text);
 public sealed class SpeakersModel(
     HoloScoopDbContext dbContext,
     ISubtitleSearchService searchService,
-    ILocalMediaLibrary mediaLibrary) : PageModel
+    ILocalMediaLibrary mediaLibrary,
+    SpeakerNameCatalog speakerNameCatalog) : PageModel
 {
     public long StreamId { get; private set; }
     public string Title { get; private set; } = string.Empty;
     public bool HasLocalVideo { get; private set; }
     public IReadOnlyList<SpeakerMappingRow> Speakers { get; private set; } = [];
+    public IReadOnlyList<string> SpeakerNames => speakerNameCatalog.Names;
 
     [TempData]
     public string? StatusMessage { get; set; }
+
+    [TempData]
+    public string? ErrorMessage { get; set; }
 
     public async Task<IActionResult> OnGetAsync(long streamId, CancellationToken cancellationToken)
     {
@@ -154,6 +160,17 @@ public sealed class SpeakersModel(
         if (label.Length == 0 || label.Length > 64 || name?.Length > 256)
         {
             return BadRequest();
+        }
+
+        if (name is not null)
+        {
+            if (!speakerNameCatalog.TryGetCanonicalName(name, out var canonicalName))
+            {
+                ErrorMessage = $"未保存：主播名“{name}”不在数据库名单中，请从提示列表中选择。";
+                return RedirectToPage(new { streamId });
+            }
+
+            name = canonicalName;
         }
 
         var exists = await dbContext.Streams.AnyAsync(item => item.Id == streamId, cancellationToken);

@@ -25,6 +25,7 @@ public static class NoteScheduleServiceCollectionExtensions
         services.AddDbContext<NoteScheduleDbContext>(options =>
             options.UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure()));
         services.AddScoped<INoteScheduleLookup, NoteScheduleLookup>();
+        services.AddSingleton<SpeakerNameCatalog>();
         return services;
     }
 }

@@ -17,6 +17,10 @@
 {
     <div class="alert alert-info" role="status">@Model.StatusMessage</div>
 }
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-danger" role="alert">@Model.ErrorMessage</div>
+}
 
 @if (Model.Speakers.Count == 0)
 {
@@ -72,7 +76,9 @@ else
                             <input type="hidden" name="streamId" value="@Model.StreamId" />
                             <input type="hidden" name="label" value="@speaker.Label" />
                             <div class="flex-grow-1">
-                                <input class="form-control" name="name" value="@(speaker.Name ?? speaker.SuggestedName)" maxlength="256" placeholder="例如：星街すいせい" />
+                                <input class="form-control speaker-name-input" name="name" value="@(speaker.Name ?? speaker.SuggestedName)"
+                                       list="speaker-name-options" maxlength="256" autocomplete="off"
+                                       placeholder="输入或选择主播名" />
                                 @if (speaker.Name is null && speaker.SuggestedName is not null)
                                 {
                                     <div class="form-text">
@@ -93,11 +99,39 @@ else
             </tbody>
         </table>
     </div>
+
+    <datalist id="speaker-name-options">
+        @foreach (var name in Model.SpeakerNames)
+        {
+            <option value="@name"></option>
+        }
+    </datalist>
 }
 
 @section Scripts {
     <script>
         (() => {
+            const canonicalNames = new Map(
+                Array.from(document.querySelectorAll('#speaker-name-options option'))
+                    .map(option => [option.value.toLocaleLowerCase(), option.value]));
+            document.querySelectorAll('.speaker-name-input').forEach(input => {
+                const validate = () => {
+                    const name = input.value.trim();
+                    const canonicalName = canonicalNames.get(name.toLocaleLowerCase());
+                    input.setCustomValidity(
+                        name === '' || canonicalName
+                            ? ''
+                            : '该主播名不在数据库名单中，请从提示列表中选择。');
+                    return canonicalName;
+                };
+                input.addEventListener('input', validate);
+                input.addEventListener('change', () => {
+                    const canonicalName = validate();
+                    if (canonicalName) input.value = canonicalName;
+                });
+                validate();
+            });
+
             const player = document.getElementById('speaker-sample-player');
             if (!player) return;
 
