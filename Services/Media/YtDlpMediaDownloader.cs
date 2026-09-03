@@ -125,6 +125,14 @@ public sealed class YtDlpMediaDownloader(
             externalId,
             request.TaskId,
             cancellationToken);
+        var storedSubtitles = FindExistingSubtitles(libraryDirectory, externalId);
+        result = result with
+        {
+            Subtitles = result.Subtitles
+                .Concat(storedSubtitles)
+                .DistinctBy(subtitle => subtitle.RelativePath, StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+        };
         if (existingVideoPath is not null)
         {
             var existingRelativePath = Path.Combine(
@@ -273,6 +281,30 @@ public sealed class YtDlpMediaDownloader(
             .Where(path => VideoExtensions.Contains(Path.GetExtension(path)))
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault();
+    }
+
+    private static IReadOnlyList<DownloadedSubtitle> FindExistingSubtitles(
+        string libraryDirectory,
+        string externalId)
+    {
+        var directory = SafeMediaPath.UnderRoot(libraryDirectory, "subtitles");
+        if (!Directory.Exists(directory)) return [];
+        var metadataDirectory = SafeMediaPath.UnderRoot(libraryDirectory, "metadata");
+        var (officialLanguages, automaticLanguages) = ReadCaptionLanguages(metadataDirectory);
+        return Directory.EnumerateFiles(directory, "*.vtt", SearchOption.TopDirectoryOnly)
+            .Select(path =>
+            {
+                var fileName = Path.GetFileName(path);
+                var (language, source) = InferSubtitleDetails(
+                    fileName,
+                    externalId,
+                    officialLanguages,
+                    automaticLanguages);
+                var relative = Path.Combine(
+                    "youtube", externalId, "subtitles", fileName).Replace('\\', '/');
+                return new DownloadedSubtitle(relative, language, source);
+            })
+            .ToArray();
     }
 
     private static void AddArguments(ProcessStartInfo info, params string[] arguments)
@@ -446,6 +478,10 @@ public sealed class YtDlpMediaDownloader(
         var language = stem.StartsWith(externalId + '.', StringComparison.Ordinal)
             ? stem[(externalId.Length + 1)..]
             : stem;
+        if (language.EndsWith(".whisper", StringComparison.OrdinalIgnoreCase))
+        {
+            return (language[..^".whisper".Length], "whisper");
+        }
         var source = officialLanguages.Contains(language)
             ? "official"
             : automaticLanguages.Contains(language) ? "auto" : "yt-dlp";
@@ -457,6 +493,10 @@ public sealed class YtDlpMediaDownloader(
     {
         var official = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var automatic = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!Directory.Exists(workDirectory))
+        {
+            return (official, automatic);
+        }
         var metadataPath = Directory.EnumerateFiles(workDirectory, "*.info.json").FirstOrDefault();
         if (metadataPath is null)
         {

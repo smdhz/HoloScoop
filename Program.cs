@@ -10,23 +10,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorPages();
 builder.Services.AddDbContext<HoloScoopDbContext>(options =>
-    options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        sql => sql.EnableRetryOnFailure()));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddScoped<ITaskQueries, TaskQueries>();
 builder.Services.AddScoped<ITaskCommands, TaskCommands>();
 builder.Services.AddMediaAndSubtitleSearch(builder.Configuration);
 builder.Services.AddNoteScheduleLookup(builder.Configuration);
-
-if (builder.Configuration.GetValue("Redis:Enabled", true))
-{
-    builder.Services.AddRedisTaskIntake(builder.Configuration);
-}
-
-if (builder.Configuration.GetValue("Jobs:Enabled", true))
-{
-    builder.Services.AddHoloScoopJobScheduling(builder.Configuration);
-}
+builder.Services.AddRedisTaskIntake(builder.Configuration);
+builder.Services.AddHoloScoopJobScheduling(builder.Configuration);
 
 var app = builder.Build();
 

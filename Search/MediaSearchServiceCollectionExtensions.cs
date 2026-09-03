@@ -16,6 +16,11 @@ public static class MediaSearchServiceCollectionExtensions
             .Validate(options => !string.IsNullOrWhiteSpace(options.LibraryRoot), "Media:LibraryRoot is required.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.WorkRoot), "Media:WorkRoot is required.")
             .Validate(options => options.DownloadTimeout > TimeSpan.Zero, "Media:DownloadTimeout must be positive.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.WhisperExecutablePath), "Media:WhisperExecutablePath is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.WhisperModelPath), "Media:WhisperModelPath is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.WhisperLanguage), "Media:WhisperLanguage is required.")
+            .Validate(options => options.WhisperThreads > 0, "Media:WhisperThreads must be positive.")
+            .Validate(options => options.TranscriptionTimeout > TimeSpan.Zero, "Media:TranscriptionTimeout must be positive.")
             .ValidateOnStart();
 
         services.AddOptions<SpeakerDiarizationOptions>()
@@ -43,6 +48,7 @@ public static class MediaSearchServiceCollectionExtensions
         services.AddSingleton<ISpeakerEmbeddingService, SpeakerEmbeddingService>();
         services.AddSingleton<ILocalMediaLibrary, LocalMediaLibrary>();
         services.AddSingleton<ISubtitleParser, WebVttParser>();
+        services.AddSingleton<IAudioTranscriber, WhisperCppAudioTranscriber>();
         services.AddScoped<IMediaTaskProcessor, MediaTaskProcessor>();
 
         services.AddHttpClient<MeilisearchSubtitleSearchService>();

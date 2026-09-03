@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace HoloScoop.Services.Note;
+namespace HoloScoop.Data;
 
 public sealed class NoteScheduleDbContext(DbContextOptions<NoteScheduleDbContext> options)
     : DbContext(options)

@@ -1,3 +1,4 @@
+using HoloScoop.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
@@ -23,7 +24,7 @@ public static class NoteScheduleServiceCollectionExtensions
         }
 
         services.AddDbContext<NoteScheduleDbContext>(options =>
-            options.UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure()));
+            options.UseSqlServer(connectionString));
         services.AddScoped<INoteScheduleLookup, NoteScheduleLookup>();
         services.AddSingleton<SpeakerNameCatalog>();
         return services;

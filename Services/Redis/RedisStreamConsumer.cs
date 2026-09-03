@@ -14,12 +14,6 @@ public sealed class RedisStreamConsumer(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_options.Enabled)
-        {
-            logger.LogInformation("Redis stream consumer is disabled.");
-            return;
-        }
-
         _options.Validate();
         var database = redis.GetDatabase();
 

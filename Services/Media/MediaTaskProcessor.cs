@@ -13,6 +13,7 @@ public sealed class MediaTaskProcessor(
     HoloScoopDbContext dbContext,
     IMediaDownloader downloader,
     ISubtitleParser subtitleParser,
+    IAudioTranscriber audioTranscriber,
     ISpeakerDiarizer speakerDiarizer,
     ISpeakerEmbeddingService speakerEmbeddingService,
     ISubtitleSearchService searchService,
@@ -104,8 +105,28 @@ public sealed class MediaTaskProcessor(
 
         if (parsedGroups.Count == 0)
         {
+            logger.LogWarning(
+                "yt-dlp returned no parseable VTT subtitles for {ExternalId}; falling back to local Whisper",
+                task.Stream.ExternalId);
+            var cues = await audioTranscriber.TranscribeAsync(
+                task.Stream.ExternalId,
+                result.DiarizationAudioPath,
+                cancellationToken);
+            if (cues.Count > 0)
+            {
+                parsedGroups.Add((
+                    new DownloadedSubtitle(
+                        string.Empty,
+                        _options.WhisperLanguage,
+                        "whisper"),
+                    cues));
+            }
+        }
+
+        if (parsedGroups.Count == 0)
+        {
             throw new MediaDownloadException(
-                $"yt-dlp returned no parseable VTT subtitles for media {task.Stream.ExternalId}.");
+                $"远端字幕不可用，且本地 Whisper 未识别出语音（{task.Stream.ExternalId}）。");
         }
 
         await dbContext.SubtitleSegments

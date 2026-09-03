@@ -4,7 +4,6 @@ public sealed class RedisStreamOptions
 {
     public const string SectionName = "Redis";
 
-    public bool Enabled { get; set; } = true;
     public string ConnectionString { get; set; } = "localhost:6379";
     public string StreamKey { get; set; } = "holoscoop:incoming";
     // Compatibility with the existing Redis__StreamName deployment variable.

@@ -1,3 +1,4 @@
+using HoloScoop.Data;
 using HoloScoop.Services.Redis;
 using Microsoft.EntityFrameworkCore;
 

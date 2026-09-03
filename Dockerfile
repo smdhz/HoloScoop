@@ -1,4 +1,5 @@
 FROM ghcr.io/denoland/deno:bin-2.9.5 AS deno
+FROM ghcr.io/ggerganov/whisper.cpp:main AS whisper
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
 WORKDIR /src
@@ -18,16 +19,22 @@ WORKDIR /app
 
 USER root
 COPY --from=deno /deno /usr/local/bin/deno
+COPY --from=whisper /app/whisper-cli /opt/whisper/bin/whisper-cli
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         ca-certificates \
         bzip2 \
         curl \
         ffmpeg \
+        libgomp1 \
         python3 \
         python3-venv \
     && python3 -m venv /opt/yt-dlp \
     && /opt/yt-dlp/bin/pip install --no-cache-dir "yt-dlp[default,curl-cffi]" \
+    && mkdir -p /opt/whisper/models \
+    && curl --fail --location --silent --show-error \
+        --output /opt/whisper/models/ggml-small.bin \
+        https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin \
     && mkdir -p /opt/sherpa-onnx \
     && curl --fail --location --silent --show-error \
         --output /tmp/sherpa-segmentation.tar.bz2 \
