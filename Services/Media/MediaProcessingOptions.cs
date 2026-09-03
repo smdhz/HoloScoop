@@ -12,7 +12,7 @@ public sealed class MediaProcessingOptions
     public string WorkPath { get => WorkRoot; set => WorkRoot = value; }
     public TimeSpan DownloadTimeout { get; set; } = TimeSpan.FromHours(2);
     public string[] SubtitleLanguages { get; set; } = ["en", "ja"];
-    public string WhisperExecutablePath { get; set; } = "/opt/whisper/bin/whisper-cli";
+    public string WhisperExecutablePath { get; set; } = "/usr/local/bin/whisper-cli";
     public string WhisperModelPath { get; set; } = "/opt/whisper/models/ggml-small.bin";
     public string WhisperLanguage { get; set; } = "ja";
     public int WhisperThreads { get; set; } = 12;
