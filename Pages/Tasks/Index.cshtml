@@ -123,7 +123,15 @@ else
 
 <h2 class="h5">最近任务</h2>
 <div class="table-responsive">
-    <table class="table align-middle">
+    <table class="table align-middle recent-tasks-table">
+        <colgroup>
+            <col class="recent-task-title-column" />
+            <col class="recent-task-mode-column" />
+            <col class="recent-task-status-column" />
+            <col class="recent-task-attempt-column" />
+            <col class="recent-task-updated-column" />
+            <col class="recent-task-actions-column" />
+        </colgroup>
         <thead>
             <tr><th>直播</th><th>模式</th><th>状态</th><th>尝试</th><th>更新时间</th><th></th></tr>
         </thead>
@@ -131,15 +139,17 @@ else
         @foreach (var task in Model.RecentTasks)
         {
             <tr>
-                <td>
-                    @if (Model.HasLocalVideo(task.StreamId))
-                    {
-                        <a asp-page="/Watch" asp-route-streamId="@task.StreamId">@task.Stream.Title</a>
-                    }
-                    else
-                    {
-                        <a href="@task.Stream.SourceUrl" target="_blank" rel="noopener">@task.Stream.Title</a>
-                    }
+                <td title="@task.Stream.Title">
+                    <div class="recent-task-title">
+                        @if (Model.HasLocalVideo(task.StreamId))
+                        {
+                            <a asp-page="/Watch" asp-route-streamId="@task.StreamId">@task.Stream.Title</a>
+                        }
+                        else
+                        {
+                            <a href="@task.Stream.SourceUrl" target="_blank" rel="noopener">@task.Stream.Title</a>
+                        }
+                    </div>
                     @if (!string.IsNullOrWhiteSpace(task.LastError))
                     {
                         <div class="small text-danger text-break">@task.LastError</div>
@@ -149,7 +159,7 @@ else
                 <td><span class="badge text-bg-secondary">@task.Status</span></td>
                 <td>@task.AttemptCount</td>
                 <td>@task.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
-                <td>
+                <td><div class="d-flex flex-wrap gap-2">
                     @if (task.Status == HoloScoop.Data.Entities.TaskStatus.Failed)
                     {
                         <form method="post" asp-page-handler="Retry">
@@ -163,7 +173,17 @@ else
                            asp-page="/Speakers"
                            asp-route-streamId="@task.StreamId">发言人</a>
                     }
-                </td>
+                    @if (task.Status is HoloScoop.Data.Entities.TaskStatus.Completed
+                        or HoloScoop.Data.Entities.TaskStatus.Failed
+                        or HoloScoop.Data.Entities.TaskStatus.Expired)
+                    {
+                        <form method="post" asp-page-handler="Delete"
+                              onsubmit="return confirm('确定删除这个任务及其字幕、发言人结果、搜索索引和本地媒体吗？此操作无法撤销。');">
+                            <input type="hidden" name="id" value="@task.Id" />
+                            <button class="btn btn-sm btn-outline-danger" type="submit">删除</button>
+                        </form>
+                    }
+                </div></td>
             </tr>
         }
         </tbody>

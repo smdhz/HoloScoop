@@ -36,9 +36,26 @@ else
                    src="/api/streams/@Model.StreamId/video"></video>
         </div>
     }
+    else if (Model.HasLocalAudio)
+    {
+        <div class="card card-body mb-3">
+            <div class="small text-secondary mb-2">点击下面的样本会从对应时间播放；样本结束时自动暂停。</div>
+            <audio id="speaker-sample-player" class="w-100" controls preload="metadata"
+                   src="/api/streams/@Model.StreamId/audio"></audio>
+        </div>
+    }
     else
     {
-        <div class="alert alert-warning">本地没有视频，暂时无法试听发言人样本。</div>
+        <div class="alert alert-warning d-flex justify-content-between align-items-center gap-3">
+            <span>本地没有可播放的视频或音频；之前删除的试听音频无法直接恢复。</span>
+            @if (Model.CanRestorePlaybackAudio)
+            {
+                <form method="post" asp-page-handler="RestoreAudio" class="m-0">
+                    <input type="hidden" name="streamId" value="@Model.StreamId" />
+                    <button class="btn btn-sm btn-warning text-nowrap" type="submit">重新处理并补回音频</button>
+                </form>
+            }
+        </div>
     }
     <div class="table-responsive">
         <table class="table align-middle">
@@ -58,7 +75,7 @@ else
                             {
                                 <div>
                                     <button type="button" class="btn btn-sm btn-outline-primary speaker-sample"
-                                            disabled="@(!Model.HasLocalVideo)"
+                                            disabled="@(!Model.HasPlayableMedia)"
                                             data-start="@(sample.StartMs / 1000d)"
                                             data-end="@(sample.EndMs / 1000d)">
                                         ▶ @SpeakersModel.FormatTime(sample.StartMs)

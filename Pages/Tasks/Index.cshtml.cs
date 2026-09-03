@@ -3,6 +3,7 @@ using HoloScoop.Data.Entities;
 using HoloScoop.Services.Media;
 using HoloScoop.Services.Note;
 using HoloScoop.Services.Redis;
+using HoloScoop.Search;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +16,10 @@ public sealed class IndexModel(
     ITaskCommands taskCommands,
     INoteScheduleLookup noteScheduleLookup,
     IIncomingTaskStore incomingTaskStore,
-    IRedisCandidateSynchronizer redisCandidateSynchronizer) : PageModel
+    IRedisCandidateSynchronizer redisCandidateSynchronizer,
+    ISubtitleSearchService searchService,
+    ILocalMediaLibrary mediaLibrary,
+    ILogger<IndexModel> logger) : PageModel
 {
     public IReadOnlyList<MediaTask> Candidates { get; private set; } = [];
     public IReadOnlyList<MediaTask> RecentTasks { get; private set; } = [];
@@ -174,6 +178,78 @@ public sealed class IndexModel(
         task.LastError = null;
         await dbContext.SaveChangesAsync(cancellationToken);
         StatusMessage = "任务已重新加入队列。";
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostDeleteAsync(long id, CancellationToken cancellationToken)
+    {
+        var task = await dbContext.Tasks
+            .Include(item => item.Stream)
+            .SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (task is null)
+        {
+            return NotFound();
+        }
+
+        if (task.Status is not (MediaTaskStatus.Completed or MediaTaskStatus.Failed or MediaTaskStatus.Expired))
+        {
+            StatusMessage = "运行中或等待中的任务不能删除。";
+            return RedirectToPage();
+        }
+
+        var streamId = task.StreamId;
+        var externalId = task.Stream.ExternalId;
+        var hasOtherTasks = await dbContext.Tasks
+            .AnyAsync(item => item.StreamId == streamId && item.Id != id, cancellationToken);
+
+        if (!hasOtherTasks)
+        {
+            await searchService.ReplaceStreamAsync(streamId, [], cancellationToken);
+
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await dbContext.DownloadedVideos
+                .Where(item => item.StreamId == streamId)
+                .ExecuteDeleteAsync(cancellationToken);
+            await dbContext.SpeakerClusterEmbeddings
+                .Where(item => item.StreamId == streamId)
+                .ExecuteDeleteAsync(cancellationToken);
+            await dbContext.SpeakerTurns
+                .Where(item => item.StreamId == streamId)
+                .ExecuteDeleteAsync(cancellationToken);
+            await dbContext.SubtitleSegments
+                .Where(item => item.StreamId == streamId)
+                .ExecuteDeleteAsync(cancellationToken);
+            dbContext.Tasks.Remove(task);
+            dbContext.Streams.Remove(task.Stream);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            try
+            {
+                mediaLibrary.DeleteMedia(externalId);
+            }
+            catch (IOException exception)
+            {
+                logger.LogWarning(exception, "Could not delete media for {ExternalId}", externalId);
+                StatusMessage = "任务和索引已删除，但本地媒体目录清理失败，请检查日志。";
+                return RedirectToPage();
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                logger.LogWarning(exception, "Could not delete media for {ExternalId}", externalId);
+                StatusMessage = "任务和索引已删除，但本地媒体目录没有删除权限。";
+                return RedirectToPage();
+            }
+        }
+        else
+        {
+            dbContext.Tasks.Remove(task);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        StatusMessage = hasOtherTasks
+            ? "任务已删除；同一直播还有其他任务，因此保留了共享数据。"
+            : "任务及其字幕、发言人结果、搜索索引和本地媒体已删除。";
         return RedirectToPage();
     }
 }

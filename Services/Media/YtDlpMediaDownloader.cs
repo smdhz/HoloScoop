@@ -112,8 +112,8 @@ public sealed class YtDlpMediaDownloader(
             throw new MediaDownloadException($"Unable to launch yt-dlp at '{_options.YtDlpPath}': {exception.Message}");
         }
 
-        var diarizationAudioPath = request.Mode == DownloadMode.VideoOnly
-            ? string.Empty
+        var preparedAudio = request.Mode == DownloadMode.VideoOnly
+            ? new PreparedAudio(string.Empty, null)
             : await PrepareDiarizationAudioAsync(
                 workDirectory,
                 request,
@@ -124,6 +124,7 @@ public sealed class YtDlpMediaDownloader(
             libraryDirectory,
             externalId,
             request.TaskId,
+            preparedAudio.PlaybackSourcePath,
             cancellationToken);
         var storedSubtitles = FindExistingSubtitles(libraryDirectory, externalId);
         result = result with
@@ -139,7 +140,7 @@ public sealed class YtDlpMediaDownloader(
                 "youtube", externalId, "video", Path.GetFileName(existingVideoPath)).Replace('\\', '/');
             result = result with { VideoRelativePaths = [existingRelativePath] };
         }
-        return result with { DiarizationAudioPath = diarizationAudioPath };
+        return result with { DiarizationAudioPath = preparedAudio.DiarizationPath };
     }
 
     private ProcessStartInfo BuildStartInfo(
@@ -197,7 +198,7 @@ public sealed class YtDlpMediaDownloader(
         return info;
     }
 
-    private async Task<string> PrepareDiarizationAudioAsync(
+    private async Task<PreparedAudio> PrepareDiarizationAudioAsync(
         string workDirectory,
         MediaDownloadRequest request,
         string? existingVideoPath,
@@ -265,12 +266,13 @@ public sealed class YtDlpMediaDownloader(
                 $"Unable to launch ffmpeg at '{_options.FfmpegPath}': {exception.Message}");
         }
 
-        if (existingVideoPath is null && request.Mode == DownloadMode.SubtitlesOnly)
-        {
-            File.Delete(inputPath);
-        }
-
-        return outputPath;
+        // Subtitle-only tasks still need durable playback media for speaker samples.
+        // Keep the compressed source and promote it to the library; the much larger
+        // PCM WAV remains work-only and is removed after processing completes.
+        var playbackSourcePath = existingVideoPath is null && request.Mode == DownloadMode.SubtitlesOnly
+            ? inputPath
+            : null;
+        return new PreparedAudio(outputPath, playbackSourcePath);
     }
 
     private static string? FindExistingVideo(string libraryDirectory)
@@ -320,11 +322,13 @@ public sealed class YtDlpMediaDownloader(
         string libraryDirectory,
         string externalId,
         long taskId,
+        string? playbackAudioPath,
         CancellationToken cancellationToken)
     {
         var subtitles = new List<DownloadedSubtitle>();
         var videos = new List<string>();
         var thumbnails = new List<string>();
+        var audioCount = 0;
         string? metadata = null;
         var (officialLanguages, automaticLanguages) = ReadCaptionLanguages(workDirectory);
 
@@ -332,7 +336,14 @@ public sealed class YtDlpMediaDownloader(
         {
             var fileName = Path.GetFileName(sourcePath);
             string category;
-            if (fileName.EndsWith(".info.json", StringComparison.OrdinalIgnoreCase))
+            if (playbackAudioPath is not null &&
+                Path.GetFullPath(sourcePath).Equals(
+                    Path.GetFullPath(playbackAudioPath),
+                    StringComparison.Ordinal))
+            {
+                category = "audio";
+            }
+            else if (fileName.EndsWith(".info.json", StringComparison.OrdinalIgnoreCase))
             {
                 category = "metadata";
             }
@@ -381,6 +392,9 @@ public sealed class YtDlpMediaDownloader(
             var relative = Path.Combine("youtube", externalId, category, fileName).Replace('\\', '/');
             switch (category)
             {
+                case "audio":
+                    audioCount++;
+                    break;
                 case "metadata":
                     metadata = relative;
                     break;
@@ -402,9 +416,10 @@ public sealed class YtDlpMediaDownloader(
         }
 
         logger.LogInformation(
-            "Finished promoting artifacts for task {TaskId}: {VideoCount} video(s), {SubtitleCount} subtitle(s), {ThumbnailCount} thumbnail(s)",
+            "Finished promoting artifacts for task {TaskId}: {VideoCount} video(s), {AudioCount} audio file(s), {SubtitleCount} subtitle(s), {ThumbnailCount} thumbnail(s)",
             taskId,
             videos.Count,
+            audioCount,
             subtitles.Count,
             thumbnails.Count);
         return new MediaDownloadResult(
@@ -548,4 +563,6 @@ public sealed class YtDlpMediaDownloader(
             // The process exited between the check and kill call.
         }
     }
+
+    private sealed record PreparedAudio(string DiarizationPath, string? PlaybackSourcePath);
 }

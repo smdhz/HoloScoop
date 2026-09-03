@@ -47,6 +47,24 @@ body {
   white-space: nowrap;
 }
 
+.recent-tasks-table {
+  min-width: 56rem;
+  table-layout: fixed;
+}
+
+.recent-task-title-column { width: 40%; }
+.recent-task-mode-column { width: 13%; }
+.recent-task-status-column { width: 10%; }
+.recent-task-attempt-column { width: 6%; }
+.recent-task-updated-column { width: 13%; }
+.recent-task-actions-column { width: 18%; }
+
+.recent-task-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .recent-project-card {
   transition: transform .15s ease, box-shadow .15s ease;
 }

@@ -8,6 +8,7 @@ public static class MediaEndpointRouteBuilderExtensions
     public static IEndpointRouteBuilder MapMediaEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/streams/{streamId:long}/video", GetVideoAsync);
+        endpoints.MapGet("/api/streams/{streamId:long}/audio", GetAudioAsync);
         return endpoints;
     }
 
@@ -35,5 +36,31 @@ public static class MediaEndpointRouteBuilderExtensions
                 video.ContentType,
                 enableRangeProcessing: true,
                 lastModified: video.LastModified);
+    }
+
+    private static async Task<IResult> GetAudioAsync(
+        long streamId,
+        HoloScoopDbContext dbContext,
+        ILocalMediaLibrary mediaLibrary,
+        CancellationToken cancellationToken)
+    {
+        var externalId = await dbContext.Streams
+            .AsNoTracking()
+            .Where(stream => stream.Id == streamId)
+            .Select(stream => stream.ExternalId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (externalId is null)
+        {
+            return Results.NotFound();
+        }
+
+        var audio = mediaLibrary.FindAudio(externalId);
+        return audio is null
+            ? Results.NotFound()
+            : Results.File(
+                audio.Path,
+                audio.ContentType,
+                enableRangeProcessing: true,
+                lastModified: audio.LastModified);
     }
 }

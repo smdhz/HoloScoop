@@ -28,6 +28,9 @@ public sealed class SpeakersModel(
     public long StreamId { get; private set; }
     public string Title { get; private set; } = string.Empty;
     public bool HasLocalVideo { get; private set; }
+    public bool HasLocalAudio { get; private set; }
+    public bool HasPlayableMedia => HasLocalVideo || HasLocalAudio;
+    public bool CanRestorePlaybackAudio { get; private set; }
     public IReadOnlyList<SpeakerMappingRow> Speakers { get; private set; } = [];
     public IReadOnlyList<string> SpeakerNames => speakerNameCatalog.Names;
 
@@ -52,6 +55,14 @@ public sealed class SpeakersModel(
         StreamId = stream.Id;
         Title = stream.Title;
         HasLocalVideo = mediaLibrary.FindVideo(stream.ExternalId) is not null;
+        HasLocalAudio = mediaLibrary.FindAudio(stream.ExternalId) is not null;
+        CanRestorePlaybackAudio = !HasPlayableMedia && await dbContext.Tasks
+            .AsNoTracking()
+            .AnyAsync(task =>
+                task.StreamId == streamId &&
+                task.Status == Data.Entities.TaskStatus.Completed &&
+                task.DownloadMode != Data.Entities.DownloadMode.VideoOnly,
+                cancellationToken);
         var turns = await dbContext.SpeakerTurns
             .AsNoTracking()
             .Where(turn => turn.StreamId == streamId)
@@ -100,6 +111,37 @@ public sealed class SpeakersModel(
             })
             .ToArray();
         return Page();
+    }
+
+    public async Task<IActionResult> OnPostRestoreAudioAsync(
+        long streamId,
+        CancellationToken cancellationToken)
+    {
+        var task = await dbContext.Tasks
+            .Include(item => item.Stream)
+            .Where(item =>
+                item.StreamId == streamId &&
+                item.Status == Data.Entities.TaskStatus.Completed &&
+                item.DownloadMode != Data.Entities.DownloadMode.VideoOnly)
+            .OrderByDescending(item => item.UpdatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (task is null)
+        {
+            return NotFound();
+        }
+
+        if (mediaLibrary.FindVideo(task.Stream.ExternalId) is not null ||
+            mediaLibrary.FindAudio(task.Stream.ExternalId) is not null)
+        {
+            StatusMessage = "本地已经存在可试听媒体，无需重新下载。";
+            return RedirectToPage(new { streamId });
+        }
+
+        task.Status = Data.Entities.TaskStatus.Queued;
+        task.LastError = null;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        StatusMessage = "已重新加入队列；任务会重新处理字幕和发言人结果，并在完成后保留试听音频。";
+        return RedirectToPage(new { streamId });
     }
 
     private static IReadOnlyList<(long StartMs, long EndMs)> PickSamples(
