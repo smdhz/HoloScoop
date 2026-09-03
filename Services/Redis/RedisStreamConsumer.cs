@@ -160,7 +160,7 @@ public sealed class RedisStreamConsumer(
             _options.StreamKey,
             entry.Id.ToString(),
             message!,
-            DateTimeOffset.UtcNow.AddHours(_options.CandidateLifetimeHours),
+            expiresAt: null,
             cancellationToken).ConfigureAwait(false);
 
         // The unique Redis stream/message key makes AlreadyExists safe to acknowledge.

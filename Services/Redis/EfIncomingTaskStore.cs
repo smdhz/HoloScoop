@@ -12,7 +12,7 @@ public sealed class EfIncomingTaskStore(HoloScoopDbContext dbContext) : IIncomin
         string redisStream,
         string redisMessageId,
         IncomingStreamMessage message,
-        DateTimeOffset expiresAt,
+        DateTimeOffset? expiresAt,
         CancellationToken cancellationToken)
     {
         if (await TaskExistsAsync(redisStream, redisMessageId, cancellationToken).ConfigureAwait(false))

@@ -6,7 +6,6 @@ using HoloScoop.Services.Redis;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using MediaTaskStatus = HoloScoop.Data.Entities.TaskStatus;
 
 namespace HoloScoop.Pages.Tasks;
@@ -16,7 +15,7 @@ public sealed class IndexModel(
     ITaskCommands taskCommands,
     INoteScheduleLookup noteScheduleLookup,
     IIncomingTaskStore incomingTaskStore,
-    IOptions<RedisStreamOptions> redisOptions) : PageModel
+    IRedisCandidateSynchronizer redisCandidateSynchronizer) : PageModel
 {
     public IReadOnlyList<MediaTask> Candidates { get; private set; } = [];
     public IReadOnlyList<MediaTask> RecentTasks { get; private set; } = [];
@@ -29,6 +28,8 @@ public sealed class IndexModel(
 
     public async Task OnGetAsync(string? member, CancellationToken cancellationToken)
     {
+        await redisCandidateSynchronizer.SynchronizeAllAsync(cancellationToken);
+
         MemberQuery = member?.Trim();
         if (!string.IsNullOrWhiteSpace(MemberQuery))
         {
@@ -43,10 +44,8 @@ public sealed class IndexModel(
             .AsNoTracking()
             .Include(task => task.Stream)
             .Where(task => task.Status == MediaTaskStatus.PendingSelection
-                && (task.ExpiresAt == null || task.ExpiresAt > now)
                 && (task.Stream.StartedAt ?? task.Stream.ScheduledAt) <= selectionCutoff)
-            .OrderBy(task => task.ExpiresAt)
-            .ThenBy(task => task.CreatedAt)
+            .OrderBy(task => task.CreatedAt)
             .ToListAsync(cancellationToken);
 
         var recentIncompleteTasks = await dbContext.Tasks
@@ -91,12 +90,11 @@ public sealed class IndexModel(
             return RedirectToPage(new { member });
         }
 
-        var lifetimeHours = redisOptions.Value.CandidateLifetimeHours;
         var result = await incomingTaskStore.SaveCandidateAsync(
             "manual:note",
             scheduleId.ToString("D"),
             message,
-            DateTimeOffset.UtcNow.AddHours(lifetimeHours),
+            expiresAt: null,
             cancellationToken);
 
         StatusMessage = result == CandidateSaveResult.Created
@@ -124,6 +122,12 @@ public sealed class IndexModel(
         if (mode != DownloadMode.VideoOnly && speakerCount == 0)
         {
             StatusMessage = "请选择单人直播，或输入 2 到 20 的实际发言人数。";
+            return RedirectToPage();
+        }
+
+        if (!await redisCandidateSynchronizer.SynchronizeOneAsync(id, cancellationToken))
+        {
+            StatusMessage = "该候选任务已经从 Redis 中移除。";
             return RedirectToPage();
         }
 

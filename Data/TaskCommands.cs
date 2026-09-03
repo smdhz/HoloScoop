@@ -24,9 +24,6 @@ public interface ITaskCommands
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
 
-    Task<int> ExpireCandidatesAsync(
-        DateTimeOffset now,
-        CancellationToken cancellationToken = default);
 }
 
 public sealed class TaskCommands(HoloScoopDbContext dbContext) : ITaskCommands
@@ -58,21 +55,6 @@ public sealed class TaskCommands(HoloScoopDbContext dbContext) : ITaskCommands
         if (task.Status != Entities.TaskStatus.PendingSelection)
         {
             return QueueTaskResult.NotSelectable;
-        }
-
-        if (task.ExpiresAt is not null && task.ExpiresAt <= now)
-        {
-            task.Status = Entities.TaskStatus.Expired;
-            try
-            {
-                await dbContext.SaveChangesAsync(cancellationToken);
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                return QueueTaskResult.ConcurrencyConflict;
-            }
-
-            return QueueTaskResult.Expired;
         }
 
         task.DownloadMode = downloadMode;
@@ -107,16 +89,4 @@ public sealed class TaskCommands(HoloScoopDbContext dbContext) : ITaskCommands
         }
     }
 
-    public Task<int> ExpireCandidatesAsync(
-        DateTimeOffset now,
-        CancellationToken cancellationToken = default)
-    {
-        return dbContext.Tasks
-            .Where(x => x.Status == Entities.TaskStatus.PendingSelection
-                && x.ExpiresAt != null
-                && x.ExpiresAt <= now)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.Status, Entities.TaskStatus.Expired)
-                .SetProperty(x => x.UpdatedAt, now), cancellationToken);
-    }
 }

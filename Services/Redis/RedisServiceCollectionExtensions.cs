@@ -19,6 +19,7 @@ public static class RedisServiceCollectionExtensions
             return ConnectionMultiplexer.Connect(redisConfiguration);
         });
         services.AddScoped<IIncomingTaskStore, EfIncomingTaskStore>();
+        services.AddScoped<IRedisCandidateSynchronizer, RedisCandidateSynchronizer>();
         services.AddHostedService<RedisStreamConsumer>();
         return services;
     }

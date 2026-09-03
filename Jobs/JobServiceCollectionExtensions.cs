@@ -17,10 +17,10 @@ public static class JobServiceCollectionExtensions
         services.AddScoped<ITaskStateMachine, TaskStateMachine>();
         services.AddQuartz(configurator =>
         {
-            var expireKey = new JobKey("expire-candidates");
+            var expireKey = new JobKey("sync-redis-candidates");
             configurator.AddJob<ExpireCandidateTasksJob>(options => options.WithIdentity(expireKey));
             configurator.AddTrigger(options => options
-                .WithIdentity("expire-candidates-every-minute")
+                .WithIdentity("sync-redis-candidates-every-minute")
                 .ForJob(expireKey)
                 .StartNow()
                 .WithSimpleSchedule(schedule => schedule.WithIntervalInMinutes(1).RepeatForever()));

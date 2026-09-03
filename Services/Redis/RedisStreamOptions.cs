@@ -15,7 +15,6 @@ public sealed class RedisStreamOptions
     public int BatchSize { get; set; } = 10;
     public int PollDelayMilliseconds { get; set; } = 1_000;
     public int PendingIdleMilliseconds { get; set; } = 60_000;
-    public int CandidateLifetimeHours { get; set; } = 24;
 
     public void Validate()
     {
@@ -27,6 +26,5 @@ public sealed class RedisStreamOptions
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(BatchSize);
         ArgumentOutOfRangeException.ThrowIfNegative(PollDelayMilliseconds);
         ArgumentOutOfRangeException.ThrowIfNegative(PendingIdleMilliseconds);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(CandidateLifetimeHours);
     }
 }

@@ -1,27 +1,23 @@
-using HoloScoop.Data;
-using Microsoft.EntityFrameworkCore;
+using HoloScoop.Services.Redis;
 using Quartz;
-using MediaTaskStatus = HoloScoop.Data.Entities.TaskStatus;
 
 namespace HoloScoop.Jobs;
 
 [DisallowConcurrentExecution]
 public sealed class ExpireCandidateTasksJob(
-    HoloScoopDbContext dbContext,
+    IRedisCandidateSynchronizer synchronizer,
     ILogger<ExpireCandidateTasksJob> logger) : IJob
 {
     public async Task Execute(IJobExecutionContext context)
     {
-        var now = DateTimeOffset.UtcNow;
-        var count = await dbContext.Tasks
-            .Where(task => task.Status == MediaTaskStatus.PendingSelection &&
-                           task.ExpiresAt != null && task.ExpiresAt <= now)
-            .ExecuteUpdateAsync(update => update
-                .SetProperty(task => task.Status, MediaTaskStatus.Expired)
-                .SetProperty(task => task.UpdatedAt, now),
-                context.CancellationToken);
+        var result = await synchronizer.SynchronizeAllAsync(context.CancellationToken);
 
-        if (count > 0)
-            logger.LogInformation("Expired {Count} unselected candidate tasks.", count);
+        if (result.Activated > 0 || result.Expired > 0)
+        {
+            logger.LogInformation(
+                "Synchronized Redis candidate state: {Activated} activated, {Expired} expired.",
+                result.Activated,
+                result.Expired);
+        }
     }
 }

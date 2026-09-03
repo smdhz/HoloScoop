@@ -27,7 +27,9 @@ public sealed class CleanupUnselectedTasksJob(
                 context.CancellationToken);
 
             var unselectedTaskCount = await dbContext.Tasks
-                .Where(task => task.DownloadMode == null && task.CreatedAt < unselectedCutoff)
+                .Where(task => task.Status == MediaTaskStatus.Expired &&
+                               task.DownloadMode == null &&
+                               task.UpdatedAt < unselectedCutoff)
                 .ExecuteDeleteAsync(context.CancellationToken);
 
             var completedTaskCount = await dbContext.Tasks
