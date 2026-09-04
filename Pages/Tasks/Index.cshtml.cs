@@ -149,8 +149,8 @@ public sealed class IndexModel(
         StatusMessage = result switch
         {
             QueueTaskResult.Queued when mode == DownloadMode.VideoOnly => "已加入仅视频下载队列。",
-            QueueTaskResult.Queued when mode == DownloadMode.SubtitlesOnly => "已加入仅字幕下载队列。",
-            QueueTaskResult.Queued => "已加入视频和字幕下载队列。",
+            QueueTaskResult.Queued when mode == DownloadMode.SubtitlesOnly => "已加入本地转写队列。",
+            QueueTaskResult.Queued => "已加入视频下载和本地转写队列。",
             QueueTaskResult.Expired => "该候选任务已经过期。",
             QueueTaskResult.NotFound => "没有找到该任务。",
             QueueTaskResult.NotSelectable => "该任务已经被处理，不能重复选择。",

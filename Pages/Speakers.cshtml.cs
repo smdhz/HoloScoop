@@ -78,7 +78,9 @@ public sealed class SpeakersModel(
             .ToListAsync(cancellationToken);
         var subtitles = await dbContext.SubtitleSegments
             .AsNoTracking()
-            .Where(segment => segment.StreamId == streamId && segment.SpeakerLabel != null)
+            .Where(segment =>
+                segment.StreamId == streamId &&
+                segment.SpeakerLabel != null)
             .Select(segment => new SubtitleSample(
                 segment.SpeakerLabel!, segment.StartMs, segment.EndMs, segment.Text))
             .ToListAsync(cancellationToken);
@@ -286,13 +288,7 @@ public sealed class SpeakersModel(
     {
         var documents = await dbContext.SubtitleSegments
             .AsNoTracking()
-            .Where(segment => segment.StreamId == streamId &&
-                segment.IsActive &&
-                (segment.TrackRole == "canonical" ||
-                 !dbContext.SubtitleSegments.Any(candidate =>
-                     candidate.StreamId == streamId &&
-                     candidate.TrackRole == "canonical" &&
-                     candidate.IsActive)))
+            .Where(segment => segment.StreamId == streamId)
             .Select(segment => new SubtitleSearchDocument(
                 segment.Id,
                 segment.StreamId,
@@ -302,7 +298,6 @@ public sealed class SpeakersModel(
                 segment.Stream.ChannelName,
                 segment.Stream.SourceUrl,
                 segment.Language,
-                segment.Source,
                 segment.Sequence,
                 segment.StartMs,
                 segment.EndMs,

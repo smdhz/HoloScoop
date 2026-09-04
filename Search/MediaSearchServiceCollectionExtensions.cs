@@ -21,12 +21,6 @@ public static class MediaSearchServiceCollectionExtensions
             .Validate(options => !string.IsNullOrWhiteSpace(options.WhisperLanguage), "Media:WhisperLanguage is required.")
             .Validate(options => options.WhisperThreads > 0, "Media:WhisperThreads must be positive.")
             .Validate(options => options.TranscriptionTimeout > TimeSpan.Zero, "Media:TranscriptionTimeout must be positive.")
-            .Validate(options => options.CanonicalMinimumQuality is >= 0 and <= 1,
-                "Media:CanonicalMinimumQuality must be between zero and one.")
-            .Validate(options => options.CanonicalMaximumRepairRanges >= 0,
-                "Media:CanonicalMaximumRepairRanges cannot be negative.")
-            .Validate(options => options.CanonicalRepairPaddingSeconds >= 0,
-                "Media:CanonicalRepairPaddingSeconds cannot be negative.")
             .ValidateOnStart();
 
         services.AddOptions<SpeakerDiarizationOptions>()
@@ -54,8 +48,6 @@ public static class MediaSearchServiceCollectionExtensions
         services.AddSingleton<ISpeakerEmbeddingService, SpeakerEmbeddingService>();
         services.AddSingleton<ILocalMediaLibrary, LocalMediaLibrary>();
         services.AddSingleton<ISubtitleParser, WebVttParser>();
-        services.AddSingleton<SubtitleCanonicalizer>();
-        services.AddSingleton<CanonicalSubtitleBuilder>();
         services.AddSingleton<MediaProcessingGate>();
         services.AddSingleton<IAudioTranscriber, WhisperCppAudioTranscriber>();
         services.AddScoped<IMediaTaskProcessor, MediaTaskProcessor>();

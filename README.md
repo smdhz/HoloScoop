@@ -18,7 +18,7 @@ HoloScoop 从 Redis Stream 接收待处理任务。任务先作为候选项展�
 - Quartz.NET 在 Web 进程内负责任务调度和后台作业。
 - EF Core + MSSQL 保存权威业务数据。
 - Meilisearch 提供全文搜索；它只是可随时从 MSSQL 重建的搜索索引，不作为权威数据源。
-- 媒体任务与 Web 放在同一个项目中，通过 `yt-dlp` 获取字幕及所需信息，必要时调用 `ffmpeg` 和 Whisper。等出现明确的独立部署或扩容需求后，再考虑拆分 Worker。
+- 媒体任务与 Web 放在同一个项目中，通过 `yt-dlp` 获取媒体及元数据，再调用 `ffmpeg` 和本地 Whisper 生成字幕。等出现明确的独立部署或扩容需求后，再考虑拆分 Worker。
 
 当前目录按以下职责组织：
 
@@ -113,37 +113,26 @@ Expired
 
 - `Id`
 - `StreamId`：关联 `Streams`
-- `Language`
-- `Source`：例如官方字幕、自动字幕或 Whisper
+- `Language`：本地 Whisper 转写使用的语言
+- `ModelVersion`：实际使用的 Whisper 模型
 - `Sequence`
 - `StartMs`
 - `EndMs`
 - `Text`
-- `TrackRole`：`raw` 或 `canonical`
-- `DeclaredLanguage`、`OriginDeclaredLanguage`、`OriginSource`
-- `GenerationVersion`、`IsActive`、`BuildStatus`
-- `NeedsReview`、`BaseTrackQuality`
-- `DetectedLanguage`、`LanguageDetectionMethod`、`ModelVersion`
 - `SpeakerLabel`：本场直播内的匿名标签，例如 `SPEAKER_00`
 - `SpeakerName`：人工确认后的成员名，可空
 - `SpeakerNameSource`、`SpeakerNameScore`：姓名归属的来源和置信度
 - `CreatedAt`
 
-使用 `(StreamId, Language, Source, Sequence)` 唯一约束，并对 `(StreamId, StartMs)` 建立索引。起止时间统一使用整数毫秒。
+使用 `(StreamId, Sequence)` 唯一约束，保证一场直播的每个顺序位置只有一条字幕，并对 `(StreamId, StartMs)` 建立索引。起止时间统一使用整数毫秒。
 
-字幕来源、生成状态、质量、语言检测和模型信息全部使用强类型数据库列保存，不再使用
-`Memo` JSON，也不读取旧版 JSON。当前转录器没有提供可靠的逐句置信度，因此不保存虚构值。
+字幕只保存本地 Whisper 生成的一套当前结果，不存在原始轨、规范轨、活动轨或选轨逻辑。
+当前转录器没有提供可靠的逐句置信度，因此不保存虚构值。
 
-媒体任务会从 metadata 的原始语言、`-orig` 标记、字幕来源和质量中选择底轨，去除
-YouTube 滚动字幕的相邻重复，并将异常字幕区间切片后交给 Whisper 重转。生成结果以
-`Source = canonical` 保存；正式列会记录每个分段的真实来源、声明/检测语言、生成版本、
-复核状态和实际使用的 Whisper 模型。若底轨整体质量过低或异常区间过多，则改为整场
-Whisper 转录；转录失败的 canonical 会保存为非 active，检索继续使用 raw 字幕。
+媒体任务不下载或复用 YouTube 官方/自动字幕。所有非“仅视频”任务都从媒体音轨调用
+本地 Whisper 生成唯一字幕集，替换该场直播先前的全部字幕，并同步到 Meilisearch。
 
-Meilisearch 只使用 active canonical；没有 active canonical 时索引 raw 字幕。原始字幕始终
-留在 SQL Server 中作为证据和以后重新生成主轨的输入。
-
-视频和原始字幕文件按固定目录规则保存在本地文件系统中，数据库只保存相对路径，不保存宿主机绝对路径。数据库暂不单独记录每个文件；只有将来真正出现多存储后端、多版本媒体或文件迁移需求时，才考虑增加资产表。
+视频和本地 Whisper 字幕文件按固定目录规则保存在本地文件系统中，数据库不保存宿主机绝对路径。数据库暂不单独记录每个文件；只有将来真正出现多存储后端、多版本媒体或文件迁移需求时，才考虑增加资产表。
 
 #### `SpeakerTurns`
 
@@ -154,11 +143,11 @@ Meilisearch 只使用 active canonical；没有 active canonical 时索引 raw �
 1. 使用 Consumer Group 从 Redis Stream 读取任务。
 2. 根据 Redis 消息 ID 去重，将候选任务写入 MSSQL；写入成功后再 `XACK`。
 3. 管理页面仅展示 Redis Stream 中仍存在、并且已开播至少 1 小时的候选任务。排队前必须选择“只有一个人”或输入 2～20 的实际说话人数；单人直播直接使用日程成员姓名。页面提供两个操作：
-   - **下载视频和字幕**：将 `DownloadMode` 设为 `VideoAndSubtitles`。
-   - **仅下载字幕**：将 `DownloadMode` 设为 `SubtitlesOnly`。
+   - **下载视频并本地转写**：将 `DownloadMode` 设为 `VideoAndSubtitles`。
+   - **仅本地转写**：将 `DownloadMode` 设为 `SubtitlesOnly`。
 4. 选择后将当前 `Tasks` 记录改为 `Queued`；用户不做选择时不开始下载。Redis 中对应消息被删除后，本地候选同步为 `Expired`；消息仍存在时不会因本地计时而过期。
-5. `yt-dlp` 按用户选择下载视频和已有字幕；媒体库已有该视频时使用 `--skip-download`，复用本地视频抽取音轨，避免重复下载。没有本地视频且选择“仅下载字幕”时，会临时下载来源提供的默认最佳音频。
-6. `ffmpeg` 把音轨转换为 16 kHz 单声道 WAV；没有可解析的远端 VTT 时，使用预构建的 whisper.cpp 程序和本地模型从该临时音频生成字幕。随后 sherpa-onnx 生成匿名说话人时间段，再按时间重叠把字幕归到说话人名下。
+5. `yt-dlp` 按用户选择下载视频或默认最佳音频及元数据，但不请求任何 YouTube 字幕；媒体库已有该视频时使用 `--skip-download`，复用本地视频抽取音轨，避免重复下载。
+6. `ffmpeg` 把音轨转换为 16 kHz 单声道 WAV，并使用预构建的 whisper.cpp 程序和本地模型生成整场字幕。随后 sherpa-onnx 生成匿名说话人时间段，再按时间重叠把字幕归到说话人名下。
 7. 把可搜索内容（包括匿名标签和已确认的成员名）同步到 Meilisearch。
 8. Web 页面提供关键词与说话人过滤，并跳转到本地视频或 YouTube 的对应时间戳。
 
@@ -204,11 +193,11 @@ NAS 的 `Hololive/library` 目录在容器内挂载为 `/data/library`；临时�
 
 - 在单个 Razor Pages 项目内按 Pages、Jobs、Data、Search、Services 划分职责。
 - 通过 Consumer Group 接入 Redis Stream，将收到的任务去重后持久化。
-- 在管理页面展示 Redis 中仍存在且已开播满 1 小时的候选任务，提供“下载视频和字幕”和“仅下载字幕”两个操作。
+- 在管理页面展示 Redis 中仍存在且已开播满 1 小时的候选任务，提供“下载视频并本地转写”和“仅本地转写”两个操作。
 - Redis 消息移除后同步失效未选择的候选任务，不使用本地有效期。
 - 使用 `Tasks`、`Streams`、`SubtitleSegments` 和 `SpeakerTurns` 四张核心表保存任务状态、直播元数据、字幕和说话人时间段。
 - 只在用户做出选择后将任务改为 `Queued`，并由 Quartz.NET 调度执行。
-- 使用 `yt-dlp` 按选择获取视频和已有字幕，并为本地转写及说话人分离临时获取默认最佳音频。
+- 使用 `yt-dlp` 按选择获取视频或默认最佳音频，不请求 YouTube 字幕。
 - 解析字幕并切段写入 MSSQL；使用 sherpa-onnx 在 CPU 上生成匿名说话人标签并支持人工映射姓名。
 - 将字幕索引到 Meilisearch，并支持从 MSSQL 全量重建索引。
 - 提供简单的任务进度、失败原因和重试入口。
@@ -249,19 +238,19 @@ NAS 挂载参数由 `compose.yaml` 中的 `library_data` 卷配置统一管理�
 
 ## 本地说话人分离
 
-多人联动直播会在已有字幕处理之后执行完全本地的说话人分离，用于区分“谁在什么时候说了什么”。这条链路不调用云端语音 API，不需要 Hugging Face token，也不要求 NVIDIA GPU：
+多人联动直播会在本地 Whisper 转写之后执行完全本地的说话人分离，用于区分“谁在什么时候说了什么”。这条链路不调用云端语音 API，不需要 Hugging Face token，也不要求 NVIDIA GPU：
 
-1. `yt-dlp` 下载已有日语字幕和来源提供的默认最佳音频；不会为了节省处理时间而特意选择低质量音频。
+1. `yt-dlp` 下载来源提供的默认最佳音频，但不下载任何官方或自动字幕；不会为了节省处理时间而特意选择低质量音频。
 2. `ffmpeg` 临时生成 16 kHz 单声道 PCM WAV。
 3. [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 使用公开的 segmentation 和 TitaNet embedding ONNX 模型在 CPU 上生成 `SPEAKER_00`、`SPEAKER_01` 等时间段。
-4. 系统按时间重叠将已有字幕归到匿名标签，写入 MSSQL 和 Meilisearch。每场直播可在说话人页面人工确认匿名标签与成员姓名，之后可以按姓名过滤全文搜索。
-5. 任务完成后删除临时音频；选择“仅下载字幕”时也不会长期保存下载的原始音频。
+4. 系统按时间重叠将本地 Whisper 字幕归到匿名标签，写入 MSSQL 和 Meilisearch。每场直播可在说话人页面人工确认匿名标签与成员姓名，之后可以按姓名过滤全文搜索。
+5. 任务完成后删除转写用的 PCM 临时音频；选择“仅本地转写”时保留压缩音频供说话人样本试听。
 
 单人直播会使用 TitaNet embedding 更新日程成员的声纹档案。多人直播在全声纹库中保守匹配。匹配结果只作为说话人页面输入框的建议值，必须人工保存后才写入字幕和搜索索引。相似度不足、与第二候选差距太小或同一成员被多个匿名说话人竞争时保持未匹配。
 
 处理任务会为每个匿名说话人保存一份聚类声纹。多人直播中人工保存姓名时，如果声纹库还没有该成员，就用这份聚类声纹建立初始档案；已有成员档案不会被多人直播覆盖，避免串音污染。
 
-当前方案优先复用 YouTube 已有字幕；字幕不存在或无法解析时，自动调用镜像中预构建的 whisper.cpp 和本地 `small` 模型转写，不在本机编译 Whisper，也不创建 Whisper Python 环境。Quartz 的媒体处理任务禁止重入，当前单进程实际一次只跑一个直播，避免 10980XE 同时处理多个长音频导致内存与 CPU 争用。以后如果积累每位成员的干净参考音频，可以增加本地声纹匹配；在此之前只承诺匿名标签和人工映射，不假定系统能自动知道真实姓名。
+当前方案完全忽略 YouTube 已有字幕，统一调用镜像中预构建的 whisper.cpp 和本地 `small` 模型转写，不在本机编译 Whisper，也不创建 Whisper Python 环境。Quartz 的媒体处理任务禁止重入，当前单进程实际一次只跑一个直播，避免 10980XE 同时处理多个长音频导致内存与 CPU 争用。以后如果积累每位成员的干净参考音频，可以增加本地声纹匹配；在此之前只承诺匿名标签和人工映射，不假定系统能自动知道真实姓名。
 
 两人同时讲话、唱歌、变声、强背景音乐和游戏音效都会降低分离准确率；字幕时间轴本身较粗时，少量字幕可能保持未归属。内容总结应使用已确认的说话人标注，不能让语言模型仅根据台词猜测说话人。
 

@@ -8,16 +8,10 @@ public sealed record MediaDownloadRequest(
     Uri SourceUrl,
     DownloadMode Mode);
 
-public sealed record DownloadedSubtitle(
-    string RelativePath,
-    string Language,
-    string Source);
-
 public sealed record MediaDownloadResult(
     string ExternalId,
     string? MetadataRelativePath,
     string? OriginalLanguage,
-    IReadOnlyList<DownloadedSubtitle> Subtitles,
     IReadOnlyList<string> VideoRelativePaths,
     IReadOnlyList<string> ThumbnailRelativePaths,
     string DiarizationAudioPath);

@@ -87,7 +87,7 @@ public sealed class MeilisearchSubtitleSearchService : ISubtitleSearchService
             ["attributesToRetrieve"] = new[]
             {
                 "id", "streamId", "title", "channelName", "sourceUrl", "language",
-                "source", "startMs", "endMs", "text", "speakerLabel", "speakerName"
+                "startMs", "endMs", "text", "speakerLabel", "speakerName"
             }
         };
         var filters = new List<string>();
@@ -126,7 +126,6 @@ public sealed class MeilisearchSubtitleSearchService : ISubtitleSearchService
                     ? channel.GetString()
                     : null,
                 hit.GetProperty("language").GetString()!,
-                hit.GetProperty("source").GetString()!,
                 startMs,
                 hit.GetProperty("endMs").GetInt64(),
                 hit.GetProperty("text").GetString()!,
@@ -192,7 +191,7 @@ public sealed class MeilisearchSubtitleSearchService : ISubtitleSearchService
                 new
                 {
                     searchableAttributes = new[] { "text", "title", "channelName", "speakerName" },
-                    filterableAttributes = new[] { "language", "source", "streamId", "speakerName" },
+                    filterableAttributes = new[] { "language", "streamId", "speakerName" },
                     sortableAttributes = new[] { "startMs" }
                 },
                 cancellationToken);

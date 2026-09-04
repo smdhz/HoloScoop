@@ -72,18 +72,6 @@ BEGIN TRY
         Id bigint IDENTITY(1, 1) NOT NULL,
         StreamId bigint NOT NULL,
         Language nvarchar(32) NOT NULL,
-        Source nvarchar(64) NOT NULL,
-        TrackRole varchar(16) NOT NULL,
-        DeclaredLanguage nvarchar(32) NOT NULL,
-        OriginDeclaredLanguage nvarchar(32) NULL,
-        OriginSource nvarchar(64) NOT NULL,
-        GenerationVersion int NOT NULL CONSTRAINT DF_SubtitleSegments_GenerationVersion DEFAULT 1,
-        IsActive bit NOT NULL CONSTRAINT DF_SubtitleSegments_IsActive DEFAULT 1,
-        NeedsReview bit NOT NULL CONSTRAINT DF_SubtitleSegments_NeedsReview DEFAULT 0,
-        BaseTrackQuality float NULL,
-        BuildStatus varchar(32) NULL,
-        DetectedLanguage nvarchar(32) NULL,
-        LanguageDetectionMethod varchar(32) NULL,
         ModelVersion nvarchar(256) NULL,
         Sequence int NOT NULL,
         StartMs bigint NOT NULL,
@@ -98,21 +86,13 @@ BEGIN TRY
         CONSTRAINT FK_SubtitleSegments_Streams_StreamId FOREIGN KEY (StreamId) REFERENCES dbo.Streams (Id) ON DELETE CASCADE,
         CONSTRAINT CK_SubtitleSegments_Sequence CHECK (Sequence >= 0),
         CONSTRAINT CK_SubtitleSegments_TimeRange CHECK (StartMs >= 0 AND EndMs > StartMs),
-        CONSTRAINT CK_SubtitleSegments_TrackRole CHECK (TrackRole IN ('raw', 'canonical')),
-        CONSTRAINT CK_SubtitleSegments_GenerationVersion CHECK (GenerationVersion >= 1),
-        CONSTRAINT CK_SubtitleSegments_BaseTrackQuality CHECK
-            (BaseTrackQuality IS NULL OR (BaseTrackQuality >= 0 AND BaseTrackQuality <= 1)),
-        CONSTRAINT CK_SubtitleSegments_BuildStatus CHECK
-            (BuildStatus IS NULL OR BuildStatus IN ('source', 'normalized', 'repaired', 'retranscribed', 'repair-failed', 'failed')),
         CONSTRAINT CK_SubtitleSegments_SpeakerNameScore CHECK
             (SpeakerNameScore IS NULL OR (SpeakerNameScore >= -1 AND SpeakerNameScore <= 1))
     );
-    CREATE UNIQUE INDEX UX_SubtitleSegments_Stream_Language_Source_Sequence
-        ON dbo.SubtitleSegments (StreamId, Language, Source, Sequence);
+    CREATE UNIQUE INDEX UX_SubtitleSegments_StreamId_Sequence
+        ON dbo.SubtitleSegments (StreamId, Sequence);
     CREATE INDEX IX_SubtitleSegments_StreamId_StartMs ON dbo.SubtitleSegments (StreamId, StartMs);
     CREATE INDEX IX_SubtitleSegments_StreamId_SpeakerName ON dbo.SubtitleSegments (StreamId, SpeakerName);
-    CREATE INDEX IX_SubtitleSegments_StreamId_TrackRole_IsActive
-        ON dbo.SubtitleSegments (StreamId, TrackRole, IsActive);
 
     CREATE TABLE dbo.SpeakerTurns
     (

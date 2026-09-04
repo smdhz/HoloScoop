@@ -126,14 +126,6 @@ public sealed class YtDlpMediaDownloader(
             request.TaskId,
             preparedAudio.PlaybackSourcePath,
             cancellationToken);
-        var storedSubtitles = FindExistingSubtitles(libraryDirectory, externalId);
-        result = result with
-        {
-            Subtitles = result.Subtitles
-                .Concat(storedSubtitles)
-                .DistinctBy(subtitle => subtitle.RelativePath, StringComparer.OrdinalIgnoreCase)
-                .ToArray()
-        };
         if (existingVideoPath is not null)
         {
             var existingRelativePath = Path.Combine(
@@ -143,7 +135,7 @@ public sealed class YtDlpMediaDownloader(
         return result with { DiarizationAudioPath = preparedAudio.DiarizationPath };
     }
 
-    private ProcessStartInfo BuildStartInfo(
+    internal ProcessStartInfo BuildStartInfo(
         MediaDownloadRequest request,
         string workDirectory,
         bool skipMediaDownload)
@@ -169,12 +161,7 @@ public sealed class YtDlpMediaDownloader(
         {
             AddArguments(info,
                 "--write-info-json",
-                "--write-thumbnail",
-                "--write-subs",
-                "--write-auto-subs",
-                "--sub-format", "vtt",
-                "--sub-langs", string.Join(',', _options.SubtitleLanguages),
-                "--sleep-subtitles", "5");
+                "--write-thumbnail");
         }
 
         if (skipMediaDownload)
@@ -285,30 +272,6 @@ public sealed class YtDlpMediaDownloader(
             .FirstOrDefault();
     }
 
-    private static IReadOnlyList<DownloadedSubtitle> FindExistingSubtitles(
-        string libraryDirectory,
-        string externalId)
-    {
-        var directory = SafeMediaPath.UnderRoot(libraryDirectory, "subtitles");
-        if (!Directory.Exists(directory)) return [];
-        var metadataDirectory = SafeMediaPath.UnderRoot(libraryDirectory, "metadata");
-        var captionMetadata = ReadCaptionMetadata(metadataDirectory);
-        return Directory.EnumerateFiles(directory, "*.vtt", SearchOption.TopDirectoryOnly)
-            .Select(path =>
-            {
-                var fileName = Path.GetFileName(path);
-                var (language, source) = InferSubtitleDetails(
-                    fileName,
-                    externalId,
-                    captionMetadata.OfficialLanguages,
-                    captionMetadata.AutomaticLanguages);
-                var relative = Path.Combine(
-                    "youtube", externalId, "subtitles", fileName).Replace('\\', '/');
-                return new DownloadedSubtitle(relative, language, source);
-            })
-            .ToArray();
-    }
-
     private static void AddArguments(ProcessStartInfo info, params string[] arguments)
     {
         foreach (var argument in arguments)
@@ -325,7 +288,6 @@ public sealed class YtDlpMediaDownloader(
         string? playbackAudioPath,
         CancellationToken cancellationToken)
     {
-        var subtitles = new List<DownloadedSubtitle>();
         var videos = new List<string>();
         var thumbnails = new List<string>();
         var audioCount = 0;
@@ -346,10 +308,6 @@ public sealed class YtDlpMediaDownloader(
             else if (fileName.EndsWith(".info.json", StringComparison.OrdinalIgnoreCase))
             {
                 category = "metadata";
-            }
-            else if (Path.GetExtension(fileName).Equals(".vtt", StringComparison.OrdinalIgnoreCase))
-            {
-                category = "subtitles";
             }
             else if (VideoExtensions.Contains(Path.GetExtension(fileName)))
             {
@@ -398,14 +356,6 @@ public sealed class YtDlpMediaDownloader(
                 case "metadata":
                     metadata = relative;
                     break;
-                case "subtitles":
-                    var (language, source) = InferSubtitleDetails(
-                        fileName,
-                        externalId,
-                        captionMetadata.OfficialLanguages,
-                        captionMetadata.AutomaticLanguages);
-                    subtitles.Add(new DownloadedSubtitle(relative, language, source));
-                    break;
                 case "video":
                     videos.Add(relative);
                     break;
@@ -416,17 +366,15 @@ public sealed class YtDlpMediaDownloader(
         }
 
         logger.LogInformation(
-            "Finished promoting artifacts for task {TaskId}: {VideoCount} video(s), {AudioCount} audio file(s), {SubtitleCount} subtitle(s), {ThumbnailCount} thumbnail(s)",
+            "Finished promoting artifacts for task {TaskId}: {VideoCount} video(s), {AudioCount} audio file(s), {ThumbnailCount} thumbnail(s)",
             taskId,
             videos.Count,
             audioCount,
-            subtitles.Count,
             thumbnails.Count);
         return new MediaDownloadResult(
             externalId,
             metadata,
             captionMetadata.OriginalLanguage,
-            subtitles,
             videos,
             thumbnails,
             string.Empty);
@@ -484,39 +432,17 @@ public sealed class YtDlpMediaDownloader(
         await destination.FlushAsync(cancellationToken);
     }
 
-    private static (string Language, string Source) InferSubtitleDetails(
-        string fileName,
-        string externalId,
-        IReadOnlySet<string> officialLanguages,
-        IReadOnlySet<string> automaticLanguages)
-    {
-        var stem = Path.GetFileNameWithoutExtension(fileName);
-        var language = stem.StartsWith(externalId + '.', StringComparison.Ordinal)
-            ? stem[(externalId.Length + 1)..]
-            : stem;
-        if (language.EndsWith(".whisper", StringComparison.OrdinalIgnoreCase))
-        {
-            return (language[..^".whisper".Length], "whisper");
-        }
-        var source = officialLanguages.Contains(language)
-            ? "official"
-            : automaticLanguages.Contains(language) ? "auto" : "yt-dlp";
-        return (language, source);
-    }
-
     private static CaptionMetadata ReadCaptionMetadata(
         string workDirectory)
     {
-        var official = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var automatic = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (!Directory.Exists(workDirectory))
         {
-            return new CaptionMetadata(null, official, automatic);
+            return new CaptionMetadata(null);
         }
         var metadataPath = Directory.EnumerateFiles(workDirectory, "*.info.json").FirstOrDefault();
         if (metadataPath is null)
         {
-            return new CaptionMetadata(null, official, automatic);
+            return new CaptionMetadata(null);
         }
 
         string? originalLanguage = null;
@@ -529,28 +455,13 @@ public sealed class YtDlpMediaDownloader(
             {
                 originalLanguage = languageNode.GetString();
             }
-            AddPropertyNames(json.RootElement, "subtitles", official);
-            AddPropertyNames(json.RootElement, "automatic_captions", automatic);
         }
         catch (JsonException)
         {
-            // Preserve the downloaded metadata for diagnostics and use a neutral source label.
+            // Preserve the downloaded metadata for diagnostics.
         }
 
-        return new CaptionMetadata(originalLanguage, official, automatic);
-    }
-
-    private static void AddPropertyNames(JsonElement root, string property, HashSet<string> destination)
-    {
-        if (!root.TryGetProperty(property, out var captions) || captions.ValueKind != JsonValueKind.Object)
-        {
-            return;
-        }
-
-        foreach (var caption in captions.EnumerateObject())
-        {
-            destination.Add(caption.Name);
-        }
+        return new CaptionMetadata(originalLanguage);
     }
 
     private static string Truncate(string value) =>
@@ -573,8 +484,5 @@ public sealed class YtDlpMediaDownloader(
 
     private sealed record PreparedAudio(string DiarizationPath, string? PlaybackSourcePath);
 
-    private sealed record CaptionMetadata(
-        string? OriginalLanguage,
-        HashSet<string> OfficialLanguages,
-        HashSet<string> AutomaticLanguages);
+    private sealed record CaptionMetadata(string? OriginalLanguage);
 }
