@@ -19,7 +19,7 @@ WORKDIR /app
 
 USER root
 COPY --from=deno /deno /usr/local/bin/deno
-COPY --from=whisper /app/ /opt/whisper/runtime/
+COPY --from=whisper /app/build/ /app/build/
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         ca-certificates \
@@ -31,9 +31,9 @@ RUN apt-get update \
         python3-venv \
     && python3 -m venv /opt/yt-dlp \
     && /opt/yt-dlp/bin/pip install --no-cache-dir "yt-dlp[default,curl-cffi]" \
-    && test -x /opt/whisper/runtime/build/bin/whisper-cli \
-    && /opt/whisper/runtime/build/bin/whisper-cli --help >/dev/null \
-    && ln -s /opt/whisper/runtime/build/bin/whisper-cli /usr/local/bin/whisper-cli \
+    && test -x /app/build/bin/whisper-cli \
+    && /app/build/bin/whisper-cli --help >/dev/null \
+    && ln -s /app/build/bin/whisper-cli /usr/local/bin/whisper-cli \
     && mkdir -p /opt/whisper/models \
     && curl --fail --location --silent --show-error \
         --output /opt/whisper/models/ggml-small.bin \
