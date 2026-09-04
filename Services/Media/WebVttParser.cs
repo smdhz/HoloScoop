@@ -73,7 +73,7 @@ public sealed partial class WebVttParser : ISubtitleParser
         var endToken = timingParts[1].Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
         if (!TryParseTimestamp(timingParts[0], out var startMs) ||
             !TryParseTimestamp(endToken, out var endMs) ||
-            endMs < startMs)
+            endMs <= startMs)
         {
             return;
         }

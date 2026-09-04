@@ -100,17 +100,33 @@ public sealed class MediaTaskProcessor(
                 transcriptionLanguage,
                 Persist: true),
             cancellationToken);
-        if (transcribedCues.Count == 0)
+        var usableCues = transcribedCues
+            .Where(cue =>
+                cue.StartMs >= 0 &&
+                cue.EndMs > cue.StartMs &&
+                !string.IsNullOrWhiteSpace(cue.Text))
+            .OrderBy(cue => cue.StartMs)
+            .ThenBy(cue => cue.EndMs)
+            .ToArray();
+        var rejectedCueCount = transcribedCues.Count - usableCues.Length;
+        if (rejectedCueCount > 0)
+        {
+            logger.LogWarning(
+                "Discarded {RejectedCueCount} invalid Whisper cue(s) for {ExternalId}",
+                rejectedCueCount,
+                task.Stream.ExternalId);
+        }
+        if (usableCues.Length == 0)
         {
             throw new MediaDownloadException(
-                $"本地 Whisper 未识别出语音（{task.Stream.ExternalId}）。");
+                $"本地 Whisper 未生成有效字幕（{task.Stream.ExternalId}）。");
         }
         await dbContext.SubtitleSegments
             .Where(segment => segment.StreamId == task.StreamId)
             .ExecuteDeleteAsync(cancellationToken);
 
         var sequence = 0;
-        foreach (var cue in transcribedCues.OrderBy(cue => cue.StartMs).ThenBy(cue => cue.EndMs))
+        foreach (var cue in usableCues)
         {
             dbContext.SubtitleSegments.Add(new SubtitleSegment
             {
