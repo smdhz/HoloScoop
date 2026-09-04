@@ -13,4 +13,8 @@
     <PackageReference Include="StackExchange.Redis" Version="3.1.31" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="HoloScoop.Tests/**/*.cs" />
+  </ItemGroup>
+
 </Project>

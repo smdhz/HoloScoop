@@ -14,6 +14,8 @@ public sealed class MediaTaskProcessor(
     IMediaDownloader downloader,
     ISubtitleParser subtitleParser,
     IAudioTranscriber audioTranscriber,
+    CanonicalSubtitleBuilder canonicalSubtitleBuilder,
+    MediaProcessingGate processingGate,
     ISpeakerDiarizer speakerDiarizer,
     ISpeakerEmbeddingService speakerEmbeddingService,
     ISubtitleSearchService searchService,
@@ -26,6 +28,7 @@ public sealed class MediaTaskProcessor(
 
     public async Task ProcessAsync(long taskId, CancellationToken cancellationToken)
     {
+        using var processingLease = await processingGate.EnterAsync(cancellationToken);
         var task = await dbContext.Tasks
             .Include(item => item.Stream)
             .SingleOrDefaultAsync(item => item.Id == taskId, cancellationToken)
@@ -85,7 +88,7 @@ public sealed class MediaTaskProcessor(
         task.Status = TaskStatus.ParsingSubtitles;
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var parsedGroups = new List<(DownloadedSubtitle Subtitle, IReadOnlyList<ParsedSubtitleCue> Cues)>();
+        var parsedGroups = new List<ParsedSubtitleTrack>();
         foreach (var subtitle in result.Subtitles)
         {
             var path = ResolveLibraryPath(subtitle.RelativePath);
@@ -99,7 +102,7 @@ public sealed class MediaTaskProcessor(
             var cues = await subtitleParser.ParseAsync(stream, cancellationToken);
             if (cues.Count > 0)
             {
-                parsedGroups.Add((subtitle, cues));
+                parsedGroups.Add(new ParsedSubtitleTrack(subtitle, cues));
             }
         }
 
@@ -108,16 +111,21 @@ public sealed class MediaTaskProcessor(
             logger.LogWarning(
                 "yt-dlp returned no parseable VTT subtitles for {ExternalId}; falling back to local Whisper",
                 task.Stream.ExternalId);
+            var fallbackLanguage = SubtitleCanonicalizer.BaseLanguage(
+                result.OriginalLanguage ?? _options.WhisperLanguage);
             var cues = await audioTranscriber.TranscribeAsync(
-                task.Stream.ExternalId,
-                result.DiarizationAudioPath,
+                new AudioTranscriptionRequest(
+                    task.Stream.ExternalId,
+                    result.DiarizationAudioPath,
+                    fallbackLanguage,
+                    Persist: true),
                 cancellationToken);
             if (cues.Count > 0)
             {
-                parsedGroups.Add((
+                parsedGroups.Add(new ParsedSubtitleTrack(
                     new DownloadedSubtitle(
                         string.Empty,
-                        _options.WhisperLanguage,
+                        fallbackLanguage,
                         "whisper"),
                     cues));
             }
@@ -129,6 +137,17 @@ public sealed class MediaTaskProcessor(
                 $"远端字幕不可用，且本地 Whisper 未识别出语音（{task.Stream.ExternalId}）。");
         }
 
+        CanonicalTrackDraft? canonical = null;
+        if (_options.CanonicalSubtitlesEnabled)
+        {
+            canonical = await canonicalSubtitleBuilder.BuildAsync(
+                task.Stream.ExternalId,
+                result.DiarizationAudioPath,
+                parsedGroups,
+                result.OriginalLanguage,
+                cancellationToken);
+        }
+
         await dbContext.SubtitleSegments
             .Where(segment => segment.StreamId == task.StreamId)
             .ExecuteDeleteAsync(cancellationToken);
@@ -137,9 +156,13 @@ public sealed class MediaTaskProcessor(
                      new { item.Subtitle.Language, item.Subtitle.Source }))
         {
             var sequence = 0;
-            foreach (var (_, cues) in group)
+            var memo = SubtitleMemo.CreateRaw(
+                group.Key.Language,
+                group.Key.Source,
+                _options.WhisperModelPath);
+            foreach (var track in group)
             {
-                foreach (var cue in cues)
+                foreach (var cue in track.Cues)
                 {
                     dbContext.SubtitleSegments.Add(new SubtitleSegment
                     {
@@ -149,9 +172,30 @@ public sealed class MediaTaskProcessor(
                         Sequence = sequence++,
                         StartMs = cue.StartMs,
                         EndMs = cue.EndMs,
-                        Text = cue.Text
+                        Text = cue.Text,
+                        Memo = memo
                     });
                 }
+            }
+        }
+
+
+        if (canonical is not null)
+        {
+            var sequence = 0;
+            foreach (var cue in canonical.Cues.OrderBy(cue => cue.StartMs).ThenBy(cue => cue.EndMs))
+            {
+                dbContext.SubtitleSegments.Add(new SubtitleSegment
+                {
+                    StreamId = task.StreamId,
+                    Language = canonical.Language,
+                    Source = "canonical",
+                    Sequence = sequence++,
+                    StartMs = cue.StartMs,
+                    EndMs = cue.EndMs,
+                    Text = cue.Text,
+                    Memo = SubtitleMemo.CreateCanonical(canonical, cue)
+                });
             }
         }
 
@@ -232,9 +276,14 @@ public sealed class MediaTaskProcessor(
         task.Status = TaskStatus.Indexing;
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var documents = await dbContext.SubtitleSegments
+        var documentQuery = dbContext.SubtitleSegments
             .AsNoTracking()
-            .Where(segment => segment.StreamId == task.StreamId)
+            .Where(segment => segment.StreamId == task.StreamId);
+        if (canonical is not null)
+        {
+            documentQuery = documentQuery.Where(segment => segment.Source == "canonical");
+        }
+        var documents = await documentQuery
             .Select(segment => new SubtitleSearchDocument(
                 segment.Id,
                 segment.StreamId,

@@ -16,6 +16,7 @@ public sealed record DownloadedSubtitle(
 public sealed record MediaDownloadResult(
     string ExternalId,
     string? MetadataRelativePath,
+    string? OriginalLanguage,
     IReadOnlyList<DownloadedSubtitle> Subtitles,
     IReadOnlyList<string> VideoRelativePaths,
     IReadOnlyList<string> ThumbnailRelativePaths,

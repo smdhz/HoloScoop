@@ -11,10 +11,14 @@ public sealed class MediaProcessingOptions
     public string LibraryPath { get => LibraryRoot; set => LibraryRoot = value; }
     public string WorkPath { get => WorkRoot; set => WorkRoot = value; }
     public TimeSpan DownloadTimeout { get; set; } = TimeSpan.FromHours(2);
-    public string[] SubtitleLanguages { get; set; } = ["en", "ja"];
+    public string[] SubtitleLanguages { get; set; } = ["en-orig", "ja-orig", "en", "ja"];
     public string WhisperExecutablePath { get; set; } = "/usr/local/bin/whisper-cli";
     public string WhisperModelPath { get; set; } = "/opt/whisper/models/ggml-small.bin";
     public string WhisperLanguage { get; set; } = "ja";
     public int WhisperThreads { get; set; } = 12;
     public TimeSpan TranscriptionTimeout { get; set; } = TimeSpan.FromHours(12);
+    public bool CanonicalSubtitlesEnabled { get; set; } = true;
+    public double CanonicalMinimumQuality { get; set; } = 0.65;
+    public int CanonicalMaximumRepairRanges { get; set; } = 50;
+    public int CanonicalRepairPaddingSeconds { get; set; } = 2;
 }

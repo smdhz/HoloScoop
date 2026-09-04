@@ -12,12 +12,14 @@ public sealed class SubtitleSegmentConfiguration : IEntityTypeConfiguration<Subt
         {
             table.HasCheckConstraint("CK_SubtitleSegments_Sequence", "[Sequence] >= 0");
             table.HasCheckConstraint("CK_SubtitleSegments_TimeRange", "[StartMs] >= 0 AND [EndMs] >= [StartMs]");
+            table.HasCheckConstraint("CK_SubtitleSegments_Memo_IsJson", "[Memo] IS NULL OR ISJSON([Memo]) = 1");
         });
         builder.HasKey(x => x.Id).HasName("PK_SubtitleSegments");
         builder.Property(x => x.Id).ValueGeneratedOnAdd();
         builder.Property(x => x.Language).HasMaxLength(32).IsRequired();
         builder.Property(x => x.Source).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Text).HasColumnType("nvarchar(max)").IsRequired();
+        builder.Property(x => x.Memo).HasColumnType("nvarchar(max)");
         builder.Property(x => x.SpeakerLabel).HasMaxLength(64);
         builder.Property(x => x.SpeakerName).HasMaxLength(256);
         builder.Property(x => x.CreatedAt).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()");

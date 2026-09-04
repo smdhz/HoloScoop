@@ -25,7 +25,11 @@ public sealed class SearchIndexRebuilder(
         {
             var documents = await dbContext.SubtitleSegments
                 .AsNoTracking()
-                .Where(segment => segment.Id > cursor)
+                .Where(segment => segment.Id > cursor &&
+                    (segment.Source == "canonical" ||
+                     !dbContext.SubtitleSegments.Any(candidate =>
+                         candidate.StreamId == segment.StreamId &&
+                         candidate.Source == "canonical")))
                 .OrderBy(segment => segment.Id)
                 .Select(segment => new SubtitleSearchDocument(
                     segment.Id,

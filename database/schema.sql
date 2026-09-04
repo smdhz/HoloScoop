@@ -271,6 +271,7 @@ BEGIN
         StartMs   bigint                 NOT NULL,
         EndMs     bigint                 NOT NULL,
         Text      nvarchar(max)          NOT NULL,
+        Memo      nvarchar(max)          NULL,
         CreatedAt datetimeoffset(3)       NOT NULL
             CONSTRAINT DF_SubtitleSegments_CreatedAt DEFAULT SYSUTCDATETIME(),
 
@@ -279,7 +280,9 @@ BEGIN
             REFERENCES dbo.Streams (Id) ON DELETE CASCADE,
         CONSTRAINT CK_SubtitleSegments_Sequence CHECK (Sequence >= 0),
         CONSTRAINT CK_SubtitleSegments_TimeRange CHECK
-            (StartMs >= 0 AND EndMs >= StartMs)
+            (StartMs >= 0 AND EndMs >= StartMs),
+        CONSTRAINT CK_SubtitleSegments_Memo_IsJson CHECK
+            (Memo IS NULL OR ISJSON(Memo) = 1)
     );
 END;
 
@@ -291,6 +294,24 @@ END;
 IF COL_LENGTH(N'dbo.SubtitleSegments', N'SpeakerName') IS NULL
 BEGIN
     ALTER TABLE dbo.SubtitleSegments ADD SpeakerName nvarchar(256) NULL;
+END;
+
+IF COL_LENGTH(N'dbo.SubtitleSegments', N'Memo') IS NULL
+BEGIN
+    ALTER TABLE dbo.SubtitleSegments ADD Memo nvarchar(max) NULL;
+END;
+
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE parent_object_id = OBJECT_ID(N'dbo.SubtitleSegments')
+      AND name = N'CK_SubtitleSegments_Memo_IsJson'
+)
+BEGIN
+    ALTER TABLE dbo.SubtitleSegments WITH CHECK
+        ADD CONSTRAINT CK_SubtitleSegments_Memo_IsJson
+        CHECK (Memo IS NULL OR ISJSON(Memo) = 1);
 END;
 
 IF NOT EXISTS

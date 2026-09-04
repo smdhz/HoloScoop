@@ -120,11 +120,45 @@ Expired
 - `StartMs`
 - `EndMs`
 - `Text`
+- `Memo`：可空的 JSON 扩展数据，使用 `nvarchar(max)` 保存；没有该字段值或没有读到某个 JSON 属性时，表示对应能力不受支持，不得补默认值或据此推断
 - `SpeakerLabel`：本场直播内的匿名标签，例如 `SPEAKER_00`
 - `SpeakerName`：人工确认后的成员名，可空
 - `CreatedAt`
 
 使用 `(StreamId, Language, Source, Sequence)` 唯一约束，并对 `(StreamId, StartMs)` 建立索引。起止时间统一使用整数毫秒。
+
+`Memo` 使用扁平 JSON 对象。当前字幕入库会写入以下已支持属性：
+
+```json
+{
+  "schemaVersion": 1,
+  "trackRole": "raw",
+  "declaredLanguage": "en",
+  "originSource": "auto"
+}
+```
+
+Whisper 原始字幕还会写入 `modelVersion`。canonical 分段会写入
+`generationVersion`、`isActive`、`needsReview`、`baseTrackQuality` 和逐句
+`originDeclaredLanguage`；能从文字脚本判断时还会写入 `detectedLanguage` 与
+`languageDetectionMethod`，Whisper 修补句同时写入 `modelVersion`。当前转录器没有提供
+可靠置信度，因此不写 `confidence`。读取方必须逐项检查属性是否存在，缺失即表示生成方
+不支持该信息，不能使用隐式默认值。
+
+媒体任务会从 metadata 的原始语言、`-orig` 标记、字幕来源和质量中选择底轨，去除
+YouTube 滚动字幕的相邻重复，并将异常字幕区间切片后交给 Whisper 重转。生成结果以
+`Source = canonical` 保存；每个分段的 `Memo` 会记录真实来源、声明/检测语言、生成版本、
+复核状态和实际使用的 Whisper 模型。若底轨整体质量过低或异常区间过多，则改为整场
+Whisper 转录；转录失败时保留原字幕并标记需要复核，不会让已有可搜索内容消失。
+
+Meilisearch 对已经生成 canonical 的直播只索引 canonical；没有 canonical 的历史直播仍
+索引现有字幕轨。原始字幕始终留在 SQL Server 中作为证据和以后重新生成主轨的输入。
+
+`CanonicalSubtitleBackfillJob` 是临时数据迁移任务，默认每 10 分钟处理一场缺少
+canonical 的历史直播。它复用现有字幕和本地音频/视频，不重新下载，也不重新运行说话人
+分离；生成的新分段会按现有 `SpeakerTurns` 重新关联说话人并替换该直播的搜索索引。
+正常媒体任务运行时回填任务会主动让路。历史数据回填完成后，应删除该 Job、配置、注册和
+仅供它使用的回填服务；源码相应位置也带有同样的临时迁移注释。
 
 视频和原始字幕文件按固定目录规则保存在本地文件系统中，数据库只保存相对路径，不保存宿主机绝对路径。数据库暂不单独记录每个文件；只有将来真正出现多存储后端、多版本媒体或文件迁移需求时，才考虑增加资产表。
 
