@@ -1,71 +1,115 @@
 # HoloScoop
 
-## 干什么
+HoloScoop 是一个面向 Hololive 直播内容的本地化采集、转写与检索系统。系统从 Redis Stream 或管理页面接收直播任务，下载媒体并在本地完成语音转写和说话人分离，将结构化结果保存到 SQL Server，同时写入 Meilisearch，以便按关键词和说话人检索，并跳转到本地媒体或 YouTube 的对应时间点。
 
-HoloScoop 用于建立一个可检索的 Hololive 直播与字幕知识库，方便按关键词查找直播内容，并直接跳转到 YouTube 对应时间点。
+系统采用人工确认后处理的工作方式：外部任务首先作为候选项进入数据库，只有用户选择处理模式并确认说话人数后，任务才会进入下载、转写和索引流程。这一设计可以避免无条件下载全部直播，并允许按内容价值决定是否长期保存视频。
 
-它不是无脑保存全部直播视频的仓库。普通直播以保存元数据、字幕、聊天记录和缩略图为主；只有高价值直播才考虑长期保存视频，以控制存储成本。
+## 已实现功能
 
-HoloScoop 从 Redis Stream 接收待处理任务。任务先作为候选项展示在管理页面，由用户决定是否下载；收到任务不等于立即开始媒体处理。Forge 可以是 Redis Stream 的生产者之一，但 HoloScoop 不依赖 Forge 完成任务管理、数据存储和搜索。
+### 任务接入与管理
 
-## 准备怎么干
+- 使用 Redis Consumer Group 消费任务，并以 Redis Stream 名称和消息 ID 去重。
+- 根据任务中的日程 ID，从 `Note.dbo.HololiveSchedule` 读取直播时间、成员、标题、地址和缩略图。
+- 支持在任务管理页面通过直播 URL 手动添加任务。
+- 候选任务写入 SQL Server 后再确认 Redis 消息，避免任务在持久化前丢失。
+- 定期检查原 Redis 消息是否仍然存在，并同步未选择候选项的有效状态。
+- 仅展示已经开播至少一小时、仍可处理的候选任务。
+- 支持失败原因展示、失败任务重试和中断任务恢复。
+- 使用 Quartz.NET 调度候选同步、队列处理和历史数据清理作业。
 
-### 技术方案
+### 媒体下载与本地转写
 
-- .NET 作为统一开发平台。
-- ASP.NET Core Razor Pages 提供管理页面、搜索页面和必要的 API。
-- Redis Stream 作为外部任务的接收通道。应用使用 Consumer Group 读取任务，先持久化到 MSSQL，再向 Redis 确认消息。
-- Quartz.NET 在 Web 进程内负责任务调度和后台作业。
-- EF Core + MSSQL 保存权威业务数据。
-- Meilisearch 提供全文搜索；它只是可随时从 MSSQL 重建的搜索索引，不作为权威数据源。
-- 媒体任务与 Web 放在同一个项目中，通过 `yt-dlp` 获取媒体及元数据，再调用 `ffmpeg` 和本地 Whisper 生成字幕。等出现明确的独立部署或扩容需求后，再考虑拆分 Worker。
+- 提供“下载视频并本地转写”和“仅本地转写”两种处理模式。
+- 使用 `yt-dlp` 获取直播元数据及所需媒体，不使用 YouTube 官方或自动字幕。
+- 检测并复用媒体库中已经存在的视频，避免重复下载。
+- 使用 `ffmpeg` 将音轨转换为 16 kHz 单声道 PCM WAV。
+- 使用预构建的 whisper.cpp 和本地模型生成字幕，不调用云端语音 API。
+- 将字幕解析为带毫秒级起止时间的分段，并保存到 SQL Server。
+- 任务完成后清理转码和转写产生的临时文件。
 
-当前目录按以下职责组织：
+### 说话人分离与声纹辅助
+
+- 使用 sherpa-onnx 在 CPU 上执行本地说话人分离。
+- 根据用户确认的说话人数生成 `SPEAKER_00`、`SPEAKER_01` 等匿名说话人标签。
+- 按时间重叠关系把字幕分段归属到对应说话人。
+- 提供说话人管理页面，可试听样本并将匿名标签映射为真实成员名。
+- 保存匿名说话人的聚类声纹，并为单人直播成员维护声纹档案。
+- 多人直播可根据现有声纹档案给出保守的姓名建议；建议必须人工保存后才会更新字幕和搜索索引。
+- 对低相似度、候选差距过小或多人竞争同一成员的结果保持未匹配，避免自动写入不可靠姓名。
+
+### 搜索与播放
+
+- 使用 Meilisearch 对字幕文本、匿名标签和已确认成员名建立全文索引。
+- 支持关键词检索和说话人筛选。
+- 搜索结果可跳转到 YouTube 对应时间点。
+- 对本地保存的媒体提供视频或音频播放接口，并支持从对应时间位置播放。
+- Meilisearch 仅作为派生索引；索引可以随时从 SQL Server 中的权威数据完整重建。
+
+### 数据维护
+
+- 每日清理失效超过 14 天且从未选择处理模式的候选任务。
+- 清理完成超过 100 天的任务记录。
+- 删除不再被任务或字幕引用的孤立直播记录。
+- 清理任务记录时不删除仍需保留的媒体、字幕内容和直播资料。
+
+## 系统架构
+
+```text
+Redis Stream ──┐
+               ├──> 候选任务 ──> 人工确认 ──> Quartz 处理队列
+管理页面 ──────┘                              │
+                                             ├──> yt-dlp / ffmpeg
+Note SQL Server ──> 日程资料补全              ├──> whisper.cpp
+                                             └──> sherpa-onnx
+                                                       │
+                                  ┌────────────────────┴──────────────┐
+                                  ▼                                   ▼
+                          SQL Server 权威数据                  Meilisearch 索引
+                                  │                                   │
+                                  └────────> Razor Pages <────────────┘
+```
+
+主要技术组件：
+
+- .NET 10 与 ASP.NET Core Razor Pages
+- Entity Framework Core 与 Microsoft SQL Server
+- Redis Streams
+- Quartz.NET
+- Meilisearch
+- yt-dlp、ffmpeg 与 whisper.cpp
+- sherpa-onnx
+- Docker Compose
+
+代码目录按职责组织：
 
 ```text
 HoloScoop/
-├── HoloScoop.csproj
-├── Pages/       # 任务管理与字幕搜索页面
-├── Jobs/        # Quartz 候选状态同步和任务处理作业
-├── Data/        # EF Core 实体与 SQL Server 映射
-├── Search/      # Meilisearch 索引与检索
-├── Services/    # Redis 接入与媒体处理
-├── database/    # 手工部署的 SQL Server schema
+├── Data/          # EF Core 实体、映射、查询和命令
+├── Jobs/          # Quartz 后台作业与任务状态机
+├── Pages/         # 任务、视频、搜索、播放和说话人页面
+├── Search/        # Meilisearch 检索与索引重建
+├── Services/
+│   ├── Media/     # 下载、转码、转写、分离、声纹和媒体存储
+│   ├── Note/      # HololiveSchedule 查询与成员目录
+│   └── Redis/     # Redis Stream 消费与候选同步
+├── database/      # SQL Server 建库脚本
 ├── Dockerfile
-├── compose.yaml
-└── README.md
+└── compose.yaml
 ```
 
-当前已经实现第一阶段的基本闭环：Redis Stream 候选任务落库、人工选择、Quartz 调度、`yt-dlp` 下载、VTT 字幕解析、本地 CPU 说话人分离、Meilisearch 索引和带 YouTube 时间戳的搜索。数据库仍通过手工脚本部署，不在应用启动时自动修改结构。
+## 处理流程
 
-### 建议的核心数据表
+1. Redis Stream Consumer 接收 `HololiveSchedule` ID，或用户在管理页面输入直播 URL 手动添加任务。
+2. 系统补全直播资料，以来源和外部视频 ID 建立或更新直播记录，并创建待选择任务。
+3. 用户选择处理模式，确认单人直播或填写 2～20 人的实际说话人数。
+4. 任务进入 `Queued` 状态，由 Quartz 作业串行领取，防止同一进程同时处理多个长音频。
+5. `yt-dlp` 获取媒体及元数据；已有本地视频时直接复用。
+6. `ffmpeg` 提取标准 WAV，whisper.cpp 生成本地字幕。
+7. sherpa-onnx 生成说话人时间段，系统将字幕分配给匿名说话人并生成声纹信息。
+8. 字幕、说话人时间段和任务结果写入 SQL Server，并同步到 Meilisearch。
+9. 用户可检索字幕、播放本地媒体、跳转 YouTube 时间点，并在说话人页面确认真实姓名。
 
-第一阶段使用四张核心表，不为视频、字幕文件另建资产表。
-
-数据库结构通过 [`database/schema.sql`](database/schema.sql) 手工维护和部署，不使用 EF Core migration。该脚本只用于创建全新的空库，不包含旧版字段探测、数据回填或兼容迁移。
-
-#### `Tasks`
-
-同一张表同时表示“等待用户选择的候选任务”和“已进入处理流程的任务”，不再拆分 `IncomingTasks` 和 `MediaJobs`。
-
-主要字段：
-
-- `Id`
-- `RedisStream`
-- `RedisMessageId`
-- `StreamId`：关联 `Streams`
-- `DownloadMode`：可空枚举，值为 `VideoAndSubtitles` 或 `SubtitlesOnly`
-- `SpeakerCount`：用户在排队前确认的本场实际说话人数
-- `SpeakerNamesJson`：单人直播自动保存日程成员姓名；多人直播为空数组
-- `ScheduledMemberName`：候选任务创建时固化的日程成员姓名，不受后续直播元数据更新影响
-- `Status`：任务当前状态
-- `AttemptCount`
-- `LastError`
-- `CreatedAt`
-- `UpdatedAt`
-- `RowVersion`
-
-`Status` 使用枚举：
+任务状态依次使用以下枚举：
 
 ```text
 PendingSelection
@@ -79,183 +123,133 @@ Failed
 Expired
 ```
 
-使用 `(RedisStream, RedisMessageId)` 唯一约束抵抗 Redis 消息重投。`DownloadMode` 为空表示尚未选择；用户点击按钮后设置枚举值，并将同一行任务改为 `Queued`。
+## 数据存储
 
-#### `Streams`
+SQL Server 是任务、直播、字幕、说话人和声纹信息的权威数据源。数据库结构由 [`database/schema.sql`](database/schema.sql) 创建和维护，应用不会在启动时自动执行 EF Core Migration。
 
-保存可被多次发现的直播/视频元数据。
+主要数据表包括：
 
-主要字段：
+- `Tasks`：候选任务、处理模式、状态、重试次数及失败信息。
+- `Streams`：直播平台、外部 ID、频道、标题、来源地址和时间等元数据。
+- `DownloadedVideos`：本地长期保存的视频记录及相对路径。
+- `SubtitleSegments`：字幕文本、时间范围、语言、模型及说话人归属。
+- `SpeakerTurns`：说话人分离产生的匿名时间段和人工确认姓名。
+- `VoiceProfiles`：成员声纹档案。
+- `SpeakerClusterEmbeddings`：单场直播中匿名说话人的聚类声纹。
 
-- `Id`
-- `Platform`
-- `ExternalId`
-- `ChannelId`
-- `ChannelName`
-- `Title`
-- `Description`
-- `SourceUrl`
-- `ThumbnailUrl`
-- `ScheduledAt`
-- `StartedAt`
-- `EndedAt`
-- `DurationMs`
-- `CreatedAt`
-- `UpdatedAt`
-
-使用 `(Platform, ExternalId)` 唯一约束，避免同一个视频被重复建档。
-
-#### `SubtitleSegments`
-
-保存解析后的字幕分段，作为 Meilisearch 索引的权威数据源。
-
-主要字段：
-
-- `Id`
-- `StreamId`：关联 `Streams`
-- `Language`：本地 Whisper 转写使用的语言
-- `ModelVersion`：实际使用的 Whisper 模型
-- `Sequence`
-- `StartMs`
-- `EndMs`
-- `Text`
-- `SpeakerLabel`：本场直播内的匿名标签，例如 `SPEAKER_00`
-- `SpeakerName`：人工确认后的成员名，可空
-- `SpeakerNameSource`、`SpeakerNameScore`：姓名归属的来源和置信度
-- `CreatedAt`
-
-使用 `(StreamId, Sequence)` 唯一约束，保证一场直播的每个顺序位置只有一条字幕，并对 `(StreamId, StartMs)` 建立索引。起止时间统一使用整数毫秒。
-
-字幕只保存本地 Whisper 生成的一套当前结果，不存在原始轨、规范轨、活动轨或选轨逻辑。
-当前转录器没有提供可靠的逐句置信度，因此不保存虚构值。
-
-媒体任务不下载或复用 YouTube 官方/自动字幕。所有非“仅视频”任务都从媒体音轨调用
-本地 Whisper 生成唯一字幕集，替换该场直播先前的全部字幕，并同步到 Meilisearch。
-
-视频和本地 Whisper 字幕文件按固定目录规则保存在本地文件系统中，数据库不保存宿主机绝对路径。数据库暂不单独记录每个文件；只有将来真正出现多存储后端、多版本媒体或文件迁移需求时，才考虑增加资产表。
-
-#### `SpeakerTurns`
-
-保存说话人分离产生的时间段，是匿名标签与字幕归属的权威数据。主要字段为 `StreamId`、`SpeakerLabel`、`SpeakerName`、`StartMs`、`EndMs` 和 `CreatedAt`。匿名标签只保证在单场直播内一致；通过 `/Speakers/{StreamId}` 页面人工映射真实成员名后，会同时更新字幕分段并重建该场直播的搜索索引。
-
-### 处理流程
-
-1. 使用 Consumer Group 从 Redis Stream 读取任务。
-2. 根据 Redis 消息 ID 去重，将候选任务写入 MSSQL；写入成功后再 `XACK`。
-3. 管理页面仅展示 Redis Stream 中仍存在、并且已开播至少 1 小时的候选任务。排队前必须选择“只有一个人”或输入 2～20 的实际说话人数；单人直播直接使用日程成员姓名。页面提供两个操作：
-   - **下载视频并本地转写**：将 `DownloadMode` 设为 `VideoAndSubtitles`。
-   - **仅本地转写**：将 `DownloadMode` 设为 `SubtitlesOnly`。
-4. 选择后将当前 `Tasks` 记录改为 `Queued`；用户不做选择时不开始下载。Redis 中对应消息被删除后，本地候选同步为 `Expired`；消息仍存在时不会因本地计时而过期。
-5. `yt-dlp` 按用户选择下载视频或默认最佳音频及元数据，但不请求任何 YouTube 字幕；媒体库已有该视频时使用 `--skip-download`，复用本地视频抽取音轨，避免重复下载。
-6. `ffmpeg` 把音轨转换为 16 kHz 单声道 WAV，并使用预构建的 whisper.cpp 程序和本地模型生成整场字幕。随后 sherpa-onnx 生成匿名说话人时间段，再按时间重叠把字幕归到说话人名下。
-7. 把可搜索内容（包括匿名标签和已确认的成员名）同步到 Meilisearch。
-8. Web 页面提供关键词与说话人过滤，并跳转到本地视频或 YouTube 的对应时间戳。
-
-Redis Stream 同时控制候选生命周期。消息落库后即可确认，但确认不会影响消息本身是否存在；HoloScoop 定期按 Redis 中对应消息是否仍存在同步候选状态。本地只负责“开播满 1 小时才可选择”的时间门槛，不自行设置候选有效期。
-
-### 本地文件存储策略
-
-HoloScoop 只有一台本地服务器，并且不为存储增加额外预算，因此直接使用宿主机文件系统，不使用 AWS S3，也不额外部署 MinIO、Ceph 等对象存储服务。单机环境下引入这些服务不会增加可用存储空间，反而会增加部署和维护成本。
-
-宿主机使用两个相互独立的目录：
+媒体文件使用宿主机文件系统，不在数据库中保存依赖部署环境的绝对路径。Compose 默认将 NAS 媒体库挂载为 `/data/library`，并将临时工作卷挂载为 `/data/work`。
 
 ```text
-/data/holoscoop/
-├── library/                         # 长期保留的文件
-│   └── youtube/
-│       └── {ExternalId}/
-│           ├── metadata/
-│           │   └── info.json
-│           ├── subtitles/
-│           ├── chat/
-│           ├── thumbnails/
-│           └── video/
-└── work/                            # 下载、转码和转写的临时文件
-    └── {TaskId}/
+/data/library/youtube/{ExternalId}/
+├── metadata/
+├── subtitles/
+├── chat/
+├── thumbnails/
+└── video/
+
+/data/work/{TaskId}/
 ```
 
-NAS 的 `Hololive/library` 目录在容器内挂载为 `/data/library`；临时工作卷挂载为 `/data/work`。业务数据和配置只使用类似 `youtube/{ExternalId}/subtitles/ja.auto.vtt` 的相对路径，不能保存 `/data/holoscoop/...` 或 `/data/library/...` 之类依赖部署环境的绝对路径。
+“下载视频并本地转写”会保留视频；“仅本地转写”主要保留转写结果及用于说话人样本试听的压缩音频。WAV 等中间文件在处理完成后删除。
 
-- 普通直播：长期保存元数据、字幕、聊天记录和缩略图。
-- 高价值直播：按明确规则或人工标记，将视频保存在 `library`。
-- 下载中的视频、抽取的 16 kHz WAV 和说话人分离中间文件保存在 `work/{TaskId}`。
-- 任务完成后清理临时文件；失败任务的临时文件在保留一段排错时间后清理。
-- MSSQL 保存任务状态、直播元数据和解析后的字幕分段。
-- Meilisearch 只保存可从 MSSQL 重建的搜索索引。
+## Redis 消息格式
 
-未来只有在增加其他服务器或实际需要多机共享文件时，才考虑抽象并迁移到其他存储后端。当前不为尚未出现的多存储需求增加复杂度。
-
-单台服务器上的文件不构成真正的备份；在没有额外磁盘和异地空间的前提下，这个风险无法通过软件消除。公开视频原则上允许从来源重新下载，数据库和无法重新生成的人工数据应优先保护。
-
-这样可以把系统重点放在内容检索和知识沉淀上，而不是维护没有实际收益的存储基础设施。
-
-## 第一阶段 MVP
-
-- 在单个 Razor Pages 项目内按 Pages、Jobs、Data、Search、Services 划分职责。
-- 通过 Consumer Group 接入 Redis Stream，将收到的任务去重后持久化。
-- 在管理页面展示 Redis 中仍存在且已开播满 1 小时的候选任务，提供“下载视频并本地转写”和“仅本地转写”两个操作。
-- Redis 消息移除后同步失效未选择的候选任务，不使用本地有效期。
-- 使用 `Tasks`、`Streams`、`SubtitleSegments` 和 `SpeakerTurns` 四张核心表保存任务状态、直播元数据、字幕和说话人时间段。
-- 只在用户做出选择后将任务改为 `Queued`，并由 Quartz.NET 调度执行。
-- 使用 `yt-dlp` 按选择获取视频或默认最佳音频，不请求 YouTube 字幕。
-- 解析字幕并切段写入 MSSQL；使用 sherpa-onnx 在 CPU 上生成匿名说话人标签并支持人工映射姓名。
-- 将字幕索引到 Meilisearch，并支持从 MSSQL 全量重建索引。
-- 提供简单的任务进度、失败原因和重试入口。
-- 提供字幕关键词搜索，并能跳转到 YouTube 时间戳。
-- 落实普通直播不长期保存视频的默认策略。
-- 每天清理失效超过 14 天且从未选择下载模式的任务、完成超过 100 天的任务记录，并删除没有其他任务或字幕引用的孤立直播记录。Redis 中仍存在的候选不会被这项清理删除；媒体库、字幕和直播数据不随已完成任务记录删除。
-
-### Redis 消息格式
-
-Consumer Group 默认读取 Forge 写入的 `forge:calendar:add`。Redis Stream 是唯一任务入口，标准消息只包含 `Note.dbo.HololiveSchedule` 的主键：
+默认 Stream 为 `forge:calendar:add`。标准消息包含 `Note.dbo.HololiveSchedule` 的主键：
 
 ```text
 id = {HololiveSchedule.Id GUID}
 ```
 
-Consumer 收到 ID 后，使用与 HoloScoop 相同的 SQL Server 账号连接 `Note` 数据库，读取 `HololiveSchedule` 的 `StartDt`、`MemberName`、`StreamUrl`、`StreamTitle` 和 `StreamImage`，再落入 HoloScoop。`Note` 仅用于按消息 ID 补全数据，不会被轮询，也不是第二个任务入口。找不到对应记录或消息无效时不会确认消息，会保留在 Redis Pending Entries List 中供排查。
+系统使用配置的 SQL Server 连接查询 `HololiveSchedule`，读取 `StartDt`、`MemberName`、`StreamUrl`、`StreamTitle` 和 `StreamImage`。`Note` 数据库只用于按消息 ID 补全资料，不会被轮询，也不是另一个任务入口。无效消息或找不到对应日程时不会被确认，会保留在 Redis Pending Entries List 中以便排查。
 
 ## Docker 部署
 
-`compose.yaml` 只启动 HoloScoop 和 Meilisearch。MSSQL 和 Redis 使用已有的外部实例，不由本项目的 Compose 创建。
+### 前置条件
 
-首次启动前复制环境变量示例并填写真实连接信息：
+- Docker 与 Docker Compose
+- 可访问的 Microsoft SQL Server
+- 可访问的 Redis
+- 可挂载的媒体存储目录或 NFS 共享
+
+`compose.yaml` 启动 HoloScoop 和 Meilisearch。SQL Server 与 Redis 使用外部实例，不由本项目创建。
+
+### 1. 创建数据库
+
+使用具备建表权限的账号，在全新的 HoloScoop 数据库中执行：
+
+```text
+database/schema.sql
+```
+
+该脚本用于创建当前结构，不负责旧版本数据库的数据迁移。
+
+### 2. 配置环境变量
+
+复制示例文件：
 
 ```powershell
 Copy-Item .env.example .env
+```
+
+Linux 或 macOS：
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env` 并设置：
+
+| 变量 | 用途 | 默认值 |
+| --- | --- | --- |
+| `APP_PORT` | Web 服务宿主机端口 | `8080` |
+| `MSSQL_CONNECTION_STRING` | HoloScoop 与 Note 数据库连接 | 必填 |
+| `REDIS_CONNECTION_STRING` | Redis 连接字符串 | 必填 |
+| `REDIS_STREAM_NAME` | 输入任务的 Redis Stream | `forge:calendar:add` |
+| `MEILI_MASTER_KEY` | Meilisearch 主密钥 | 必填，至少 16 字节 |
+| `MEILI_PORT` | Meilisearch 宿主机端口 | `7700` |
+
+`.env` 已被 Git 忽略，不应提交真实连接字符串或密钥；`.env.example` 只包含示例值。
+
+### 3. 配置媒体存储
+
+项目中的 `compose.yaml` 已配置以下 NFS 共享：
+
+```text
+10.16.1.101:/volume1/media/Video/Hololive/library
+```
+
+如果部署环境不同，请修改 `library_data` 的 `addr` 和 `device`。容器内挂载位置应保持为 `/data/library`。
+
+### 4. 启动服务
+
+```bash
 docker compose up -d --build
 ```
 
-首次部署还需要由具备建表权限的账号执行 [`database/schema.sql`](database/schema.sql)。
+启动完成后访问：
 
-`compose.yaml` 固定使用 `Production` 和 NAS NFS，并启用 Redis Stream 入口、Note 数据补全和 Quartz 处理链路。
+```text
+http://localhost:8080
+```
 
-应用默认通过 `http://localhost:8080` 访问。Meilisearch 将宿主机的 `${MEILI_PORT:-7700}` 映射到容器端口 `7700`，容器内的 HoloScoop 通过 `http://meilisearch:7700` 访问它。
+查看服务状态与日志：
 
-应用镜像基于 .NET 10 Ubuntu 镜像构建，并安装 `yt-dlp`、`ffmpeg`、YouTube 解析所需的 Deno JavaScript 运行时，以及公开可直接下载的 sherpa-onnx 说话人分离模型。Compose 将 `10.16.1.101:/volume1/media/Video/Hololive/library` 作为 NFS 卷挂载到容器内的 `/data/library`；临时工作目录 `/data/work` 和 Meilisearch 数据分别使用本地 Docker 卷 `work_data` 和 `meilisearch_data`。
+```bash
+docker compose ps
+docker compose logs -f app
+```
 
-NAS 挂载参数由 `compose.yaml` 中的 `library_data` 卷配置统一管理。
+## 运行特性与限制
 
-## 本地说话人分离
+- 所有转写、说话人分离和声纹计算均在本地执行，不需要云端语音服务、Hugging Face Token 或 NVIDIA GPU。
+- 当前处理器按单进程串行执行媒体任务，以控制长直播处理时的 CPU 和内存占用。
+- 说话人分离和声纹匹配属于辅助结果；重叠讲话、唱歌、变声、背景音乐和游戏音效会降低准确率。
+- 多人直播的姓名建议必须人工确认，系统不会仅根据台词推测说话人身份。
+- Meilisearch 数据可从 SQL Server 重建，不应作为唯一数据副本。
+- 单台服务器上的媒体文件不等同于备份；数据库和人工确认的说话人数据应纳入独立备份策略。
 
-多人联动直播会在本地 Whisper 转写之后执行完全本地的说话人分离，用于区分“谁在什么时候说了什么”。这条链路不调用云端语音 API，不需要 Hugging Face token，也不要求 NVIDIA GPU：
+## 安全说明
 
-1. `yt-dlp` 下载来源提供的默认最佳音频，但不下载任何官方或自动字幕；不会为了节省处理时间而特意选择低质量音频。
-2. `ffmpeg` 临时生成 16 kHz 单声道 PCM WAV。
-3. [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 使用公开的 segmentation 和 TitaNet embedding ONNX 模型在 CPU 上生成 `SPEAKER_00`、`SPEAKER_01` 等时间段。
-4. 系统按时间重叠将本地 Whisper 字幕归到匿名标签，写入 MSSQL 和 Meilisearch。每场直播可在说话人页面人工确认匿名标签与成员姓名，之后可以按姓名过滤全文搜索。
-5. 任务完成后删除转写用的 PCM 临时音频；选择“仅本地转写”时保留压缩音频供说话人样本试听。
-
-单人直播会使用 TitaNet embedding 更新日程成员的声纹档案。多人直播在全声纹库中保守匹配。匹配结果只作为说话人页面输入框的建议值，必须人工保存后才写入字幕和搜索索引。相似度不足、与第二候选差距太小或同一成员被多个匿名说话人竞争时保持未匹配。
-
-处理任务会为每个匿名说话人保存一份聚类声纹。多人直播中人工保存姓名时，如果声纹库还没有该成员，就用这份聚类声纹建立初始档案；已有成员档案不会被多人直播覆盖，避免串音污染。
-
-当前方案完全忽略 YouTube 已有字幕，统一调用镜像中预构建的 whisper.cpp 和本地 `small` 模型转写，不在本机编译 Whisper，也不创建 Whisper Python 环境。Quartz 的媒体处理任务禁止重入，当前单进程实际一次只跑一个直播，避免 10980XE 同时处理多个长音频导致内存与 CPU 争用。以后如果积累每位成员的干净参考音频，可以增加本地声纹匹配；在此之前只承诺匿名标签和人工映射，不假定系统能自动知道真实姓名。
-
-两人同时讲话、唱歌、变声、强背景音乐和游戏音效都会降低分离准确率；字幕时间轴本身较粗时，少量字幕可能保持未归属。内容总结应使用已确认的说话人标注，不能让语言模型仅根据台词猜测说话人。
-
-## 暂不做
-
-- 不做 embedding 或向量检索。
-- 不引入复杂的分布式队列。
-- 不做全量视频下载和长期归档。
+- 不要提交 `.env`、真实数据库连接字符串、Redis 密码或 Meilisearch 主密钥。
+- 对外部署时应通过反向代理配置 HTTPS、访问控制和可信网络边界。
+- `/api/streams/{streamId}/video` 与 `/api/streams/{streamId}/audio` 会提供本地媒体内容，不应在未配置访问控制的情况下直接暴露到公网。
