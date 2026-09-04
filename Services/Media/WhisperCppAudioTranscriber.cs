@@ -83,7 +83,11 @@ public sealed class WhisperCppAudioTranscriber(
         timeout.CancelAfter(_options.TranscriptionTimeout);
 
         logger.LogInformation(
-            "Starting local whisper.cpp transcription for {AudioPath} at {StartMs}-{EndMs} in {Language}",
+            "Starting local whisper.cpp transcription: {Executable} {Arguments}",
+            startInfo.FileName,
+            FormatArguments(startInfo.ArgumentList));
+        logger.LogInformation(
+            "Transcribing {AudioPath} at {StartMs}-{EndMs} in {Language}",
             audioPath,
             request.StartMs,
             request.EndMs,
@@ -102,14 +106,16 @@ public sealed class WhisperCppAudioTranscriber(
             var error = await stderrTask;
             if (process.ExitCode != 0)
             {
+                var diagnostics = FormatDiagnostics(output, error);
                 logger.LogError(
-                    "whisper.cpp exited with code {ExitCode}: {Error}",
+                    "whisper.cpp exited with code {ExitCode}.{NewLine}{Diagnostics}",
                     process.ExitCode,
-                    Truncate(error));
+                    Environment.NewLine,
+                    diagnostics);
                 throw new MediaDownloadException(
-                    $"本地 whisper.cpp 转写失败（退出码 {process.ExitCode}）。",
-                    process.ExitCode,
-                    Truncate(error));
+                    $"本地 whisper.cpp 转写失败（退出码 {process.ExitCode}）。" +
+                    $"{Environment.NewLine}{Environment.NewLine}{diagnostics}",
+                    process.ExitCode);
             }
 
             logger.LogInformation("Local whisper.cpp transcription completed: {Output}", Truncate(output));
@@ -263,6 +269,25 @@ public sealed class WhisperCppAudioTranscriber(
 
     private static string Truncate(string value) =>
         value.Length <= ErrorLimit ? value.Trim() : value[^ErrorLimit..].Trim();
+
+    private static string FormatDiagnostics(string stdout, string stderr)
+    {
+        var formattedStdout = Truncate(stdout);
+        var formattedStderr = Truncate(stderr);
+        return $"stdout:{Environment.NewLine}{DisplayOutput(formattedStdout)}" +
+            $"{Environment.NewLine}stderr:{Environment.NewLine}{DisplayOutput(formattedStderr)}";
+    }
+
+    private static string DisplayOutput(string value) =>
+        string.IsNullOrWhiteSpace(value) ? "<empty>" : value;
+
+    private static string FormatArguments(System.Collections.ObjectModel.Collection<string> arguments) =>
+        string.Join(' ', arguments.Select(QuoteArgument));
+
+    private static string QuoteArgument(string argument) =>
+        argument.Any(char.IsWhiteSpace)
+            ? $"\"{argument.Replace("\"", "\\\"")}\""
+            : argument;
 
     private static string FormatSeconds(long milliseconds) =>
         (milliseconds / 1000d).ToString("0.###", CultureInfo.InvariantCulture);

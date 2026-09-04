@@ -27,14 +27,22 @@ public sealed class CanonicalSubtitleBuilder(
             return draft;
         }
 
-        var transcribeWholeTrack = draft.Quality < _options.CanonicalMinimumQuality ||
-            draft.RepairRanges.Count > _options.CanonicalMaximumRepairRanges;
+        var qualityBelowMinimum = draft.Quality < _options.CanonicalMinimumQuality;
+        var tooManyRepairRanges = draft.RepairRanges.Count > _options.CanonicalMaximumRepairRanges;
+        var transcribeWholeTrack = qualityBelowMinimum || tooManyRepairRanges;
         if (transcribeWholeTrack)
         {
             logger.LogWarning(
-                "Canonical subtitle base for {ExternalId} scored {Quality:F3}; retranscribing the full audio",
+                "Retranscribing the full audio for {ExternalId}: quality {Quality:F3} " +
+                "(minimum {MinimumQuality:F3}, below minimum: {QualityBelowMinimum}); " +
+                "repair ranges {RepairRangeCount} (maximum {MaximumRepairRanges}, over maximum: {TooManyRepairRanges})",
                 externalId,
-                draft.Quality);
+                draft.Quality,
+                _options.CanonicalMinimumQuality,
+                qualityBelowMinimum,
+                draft.RepairRanges.Count,
+                _options.CanonicalMaximumRepairRanges,
+                tooManyRepairRanges);
             try
             {
                 var transcribed = await audioTranscriber.TranscribeAsync(
