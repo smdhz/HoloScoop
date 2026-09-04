@@ -223,7 +223,10 @@ public sealed class SpeakersModel(
 
         var changedTurns = await dbContext.SpeakerTurns
             .Where(turn => turn.StreamId == streamId && turn.SpeakerLabel == label)
-            .ExecuteUpdateAsync(update => update.SetProperty(turn => turn.SpeakerName, name), cancellationToken);
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(turn => turn.SpeakerName, name)
+                .SetProperty(turn => turn.SpeakerNameSource, name == null ? null : "manual")
+                .SetProperty(turn => turn.SpeakerNameScore, (double?)null), cancellationToken);
         if (changedTurns == 0)
         {
             return BadRequest();
@@ -231,7 +234,10 @@ public sealed class SpeakersModel(
 
         await dbContext.SubtitleSegments
             .Where(segment => segment.StreamId == streamId && segment.SpeakerLabel == label)
-            .ExecuteUpdateAsync(update => update.SetProperty(segment => segment.SpeakerName, name), cancellationToken);
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(segment => segment.SpeakerName, name)
+                .SetProperty(segment => segment.SpeakerNameSource, name == null ? null : "manual")
+                .SetProperty(segment => segment.SpeakerNameScore, (double?)null), cancellationToken);
         if (name is not null)
         {
             await CreateVoiceProfileIfMissingAsync(streamId, label, name, cancellationToken);
@@ -280,7 +286,13 @@ public sealed class SpeakersModel(
     {
         var documents = await dbContext.SubtitleSegments
             .AsNoTracking()
-            .Where(segment => segment.StreamId == streamId)
+            .Where(segment => segment.StreamId == streamId &&
+                segment.IsActive &&
+                (segment.TrackRole == "canonical" ||
+                 !dbContext.SubtitleSegments.Any(candidate =>
+                     candidate.StreamId == streamId &&
+                     candidate.TrackRole == "canonical" &&
+                     candidate.IsActive)))
             .Select(segment => new SubtitleSearchDocument(
                 segment.Id,
                 segment.StreamId,

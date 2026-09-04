@@ -12,6 +12,5 @@ public interface IIncomingTaskStore
         string redisStream,
         string redisMessageId,
         IncomingStreamMessage message,
-        DateTimeOffset? expiresAt,
         CancellationToken cancellationToken);
 }

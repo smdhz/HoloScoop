@@ -42,7 +42,7 @@ HoloScoop/
 
 第一阶段使用四张核心表，不为视频、字幕文件另建资产表。
 
-数据库结构通过 [`database/schema.sql`](database/schema.sql) 手工维护和部署，不使用 EF Core migration。脚本采用存在性检查，可以对已经初始化的数据库重复执行；后续修改表结构时也应显式更新这份脚本。
+数据库结构通过 [`database/schema.sql`](database/schema.sql) 手工维护和部署，不使用 EF Core migration。该脚本只用于创建全新的空库，不包含旧版字段探测、数据回填或兼容迁移。
 
 #### `Tasks`
 
@@ -59,7 +59,6 @@ HoloScoop/
 - `SpeakerNamesJson`：单人直播自动保存日程成员姓名；多人直播为空数组
 - `ScheduledMemberName`：候选任务创建时固化的日程成员姓名，不受后续直播元数据更新影响
 - `Status`：任务当前状态
-- `ExpiresAt`：兼容旧数据保留，新任务不再使用本地到期时间
 - `AttemptCount`
 - `LastError`
 - `CreatedAt`
@@ -120,39 +119,29 @@ Expired
 - `StartMs`
 - `EndMs`
 - `Text`
-- `Memo`：可空的 JSON 扩展数据，使用 `nvarchar(max)` 保存；没有该字段值或没有读到某个 JSON 属性时，表示对应能力不受支持，不得补默认值或据此推断
+- `TrackRole`：`raw` 或 `canonical`
+- `DeclaredLanguage`、`OriginDeclaredLanguage`、`OriginSource`
+- `GenerationVersion`、`IsActive`、`BuildStatus`
+- `NeedsReview`、`BaseTrackQuality`
+- `DetectedLanguage`、`LanguageDetectionMethod`、`ModelVersion`
 - `SpeakerLabel`：本场直播内的匿名标签，例如 `SPEAKER_00`
 - `SpeakerName`：人工确认后的成员名，可空
+- `SpeakerNameSource`、`SpeakerNameScore`：姓名归属的来源和置信度
 - `CreatedAt`
 
 使用 `(StreamId, Language, Source, Sequence)` 唯一约束，并对 `(StreamId, StartMs)` 建立索引。起止时间统一使用整数毫秒。
 
-`Memo` 使用扁平 JSON 对象。当前字幕入库会写入以下已支持属性：
-
-```json
-{
-  "schemaVersion": 1,
-  "trackRole": "raw",
-  "declaredLanguage": "en",
-  "originSource": "auto"
-}
-```
-
-Whisper 原始字幕还会写入 `modelVersion`。canonical 分段会写入
-`generationVersion`、`isActive`、`needsReview`、`baseTrackQuality` 和逐句
-`originDeclaredLanguage`；能从文字脚本判断时还会写入 `detectedLanguage` 与
-`languageDetectionMethod`，Whisper 修补句同时写入 `modelVersion`。当前转录器没有提供
-可靠置信度，因此不写 `confidence`。读取方必须逐项检查属性是否存在，缺失即表示生成方
-不支持该信息，不能使用隐式默认值。
+字幕来源、生成状态、质量、语言检测和模型信息全部使用强类型数据库列保存，不再使用
+`Memo` JSON，也不读取旧版 JSON。当前转录器没有提供可靠的逐句置信度，因此不保存虚构值。
 
 媒体任务会从 metadata 的原始语言、`-orig` 标记、字幕来源和质量中选择底轨，去除
 YouTube 滚动字幕的相邻重复，并将异常字幕区间切片后交给 Whisper 重转。生成结果以
-`Source = canonical` 保存；每个分段的 `Memo` 会记录真实来源、声明/检测语言、生成版本、
+`Source = canonical` 保存；正式列会记录每个分段的真实来源、声明/检测语言、生成版本、
 复核状态和实际使用的 Whisper 模型。若底轨整体质量过低或异常区间过多，则改为整场
-Whisper 转录；转录失败时保留原字幕并标记需要复核，不会让已有可搜索内容消失。
+Whisper 转录；转录失败的 canonical 会保存为非 active，检索继续使用 raw 字幕。
 
-Meilisearch 对已经生成 canonical 的直播只索引 canonical；没有 canonical 的历史直播仍
-索引现有字幕轨。原始字幕始终留在 SQL Server 中作为证据和以后重新生成主轨的输入。
+Meilisearch 只使用 active canonical；没有 active canonical 时索引 raw 字幕。原始字幕始终
+留在 SQL Server 中作为证据和以后重新生成主轨的输入。
 
 视频和原始字幕文件按固定目录规则保存在本地文件系统中，数据库只保存相对路径，不保存宿主机绝对路径。数据库暂不单独记录每个文件；只有将来真正出现多存储后端、多版本媒体或文件迁移需求时，才考虑增加资产表。
 

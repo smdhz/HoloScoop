@@ -12,7 +12,6 @@ public sealed class EfIncomingTaskStore(HoloScoopDbContext dbContext) : IIncomin
         string redisStream,
         string redisMessageId,
         IncomingStreamMessage message,
-        DateTimeOffset? expiresAt,
         CancellationToken cancellationToken)
     {
         if (await TaskExistsAsync(redisStream, redisMessageId, cancellationToken).ConfigureAwait(false))
@@ -50,8 +49,7 @@ public sealed class EfIncomingTaskStore(HoloScoopDbContext dbContext) : IIncomin
             RedisMessageId = redisMessageId,
             ScheduledMemberName = message.ChannelName,
             Stream = stream,
-            Status = MediaTaskStatus.PendingSelection,
-            ExpiresAt = expiresAt
+            Status = MediaTaskStatus.PendingSelection
         });
 
         try

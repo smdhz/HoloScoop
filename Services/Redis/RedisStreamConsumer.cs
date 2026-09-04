@@ -39,7 +39,7 @@ public sealed class RedisStreamConsumer(
                 var entries = recovered.Length > 0
                     ? recovered
                     : await database.StreamReadGroupAsync(
-                        _options.StreamKey,
+                        _options.StreamName,
                         _options.ConsumerGroup,
                         _options.ConsumerName,
                         ">",
@@ -77,7 +77,7 @@ public sealed class RedisStreamConsumer(
         try
         {
             await database.StreamCreateConsumerGroupAsync(
-                _options.StreamKey,
+                _options.StreamName,
                 _options.ConsumerGroup,
                 _options.GroupStartPosition,
                 createStream: true).ConfigureAwait(false);
@@ -91,7 +91,7 @@ public sealed class RedisStreamConsumer(
     private async Task<StreamEntry[]> RecoverStalePendingAsync(IDatabase database, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var summary = await database.StreamPendingAsync(_options.StreamKey, _options.ConsumerGroup).ConfigureAwait(false);
+        var summary = await database.StreamPendingAsync(_options.StreamName, _options.ConsumerGroup).ConfigureAwait(false);
         if (summary.PendingMessageCount == 0) return [];
 
         var ids = new List<RedisValue>(_options.BatchSize);
@@ -99,7 +99,7 @@ public sealed class RedisStreamConsumer(
         {
             if (ids.Count >= _options.BatchSize) break;
             var pending = await database.StreamPendingMessagesAsync(
-                _options.StreamKey,
+                _options.StreamName,
                 _options.ConsumerGroup,
                 _options.BatchSize - ids.Count,
                 consumer.Name,
@@ -113,7 +113,7 @@ public sealed class RedisStreamConsumer(
 
         if (ids.Count == 0) return [];
         return await database.StreamClaimAsync(
-            _options.StreamKey,
+            _options.StreamName,
             _options.ConsumerGroup,
             _options.ConsumerName,
             _options.PendingIdleMilliseconds,
@@ -126,57 +126,43 @@ public sealed class RedisStreamConsumer(
         CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
-        IncomingStreamMessage? message;
-        if (TryGetNoteScheduleId(entry.Values, out var scheduleId))
+        if (!TryGetNoteScheduleId(entry.Values, out var scheduleId))
         {
-            var lookup = scope.ServiceProvider.GetRequiredService<INoteScheduleLookup>();
-            message = await lookup.FindAsync(scheduleId, cancellationToken).ConfigureAwait(false);
-            if (message is null)
-            {
-                logger.LogError(
-                    "Redis message {Stream}/{MessageId} references missing Note.dbo.HololiveSchedule row {ScheduleId}.",
-                    _options.StreamKey,
-                    entry.Id,
-                    scheduleId);
-                return;
-            }
+            logger.LogError(
+                "Redis message {Stream}/{MessageId} must contain exactly one valid Note schedule id field.",
+                _options.StreamName,
+                entry.Id);
+            return;
         }
-        else if (!IncomingStreamMessage.TryParse(entry.Values, out message, out var error))
+
+        var lookup = scope.ServiceProvider.GetRequiredService<INoteScheduleLookup>();
+        var message = await lookup.FindAsync(scheduleId, cancellationToken).ConfigureAwait(false);
+        if (message is null)
         {
-            // Do not ACK malformed input: it remains inspectable/recoverable in the PEL.
-            logger.LogError("Invalid Redis stream message {Stream}/{MessageId}: {Error}",
-                _options.StreamKey, entry.Id, error);
+            logger.LogError(
+                "Redis message {Stream}/{MessageId} references missing Note.dbo.HololiveSchedule row {ScheduleId}.",
+                _options.StreamName,
+                entry.Id,
+                scheduleId);
             return;
         }
 
         var store = scope.ServiceProvider.GetRequiredService<IIncomingTaskStore>();
         var result = await store.SaveCandidateAsync(
-            _options.StreamKey,
+            _options.StreamName,
             entry.Id.ToString(),
-            message!,
-            expiresAt: null,
+            message,
             cancellationToken).ConfigureAwait(false);
 
         // The unique Redis stream/message key makes AlreadyExists safe to acknowledge.
-        await database.StreamAcknowledgeAsync(_options.StreamKey, _options.ConsumerGroup, entry.Id).ConfigureAwait(false);
+        await database.StreamAcknowledgeAsync(_options.StreamName, _options.ConsumerGroup, entry.Id).ConfigureAwait(false);
         logger.LogInformation("Redis message {MessageId} persisted ({Result}) and acknowledged.", entry.Id, result);
     }
 
     private static bool TryGetNoteScheduleId(NameValueEntry[] values, out Guid scheduleId)
     {
-        foreach (var value in values)
-        {
-            var name = value.Name.ToString();
-            if (name.Equals("id", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("scheduleId", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("schedule_id", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("hololiveScheduleId", StringComparison.OrdinalIgnoreCase))
-            {
-                return Guid.TryParse(value.Value.ToString(), out scheduleId);
-            }
-        }
-
         scheduleId = Guid.Empty;
-        return false;
+        var idFields = values.Where(value => value.Name.ToString() == "id").ToArray();
+        return idFields.Length == 1 && Guid.TryParse(idFields[0].Value.ToString(), out scheduleId);
     }
 }

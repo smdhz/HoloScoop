@@ -50,7 +50,9 @@ public sealed class CanonicalSubtitleBuilder(
                     return draft with
                     {
                         Cues = normalized.Select(cue => ToWhisperCue(cue, draft.Language)).ToArray(),
-                        RepairRanges = []
+                        RepairRanges = [],
+                        BuildStatus = "retranscribed",
+                        IsActive = true
                     };
                 }
             }
@@ -61,15 +63,17 @@ public sealed class CanonicalSubtitleBuilder(
                     "Full canonical retranscription failed for {ExternalId}; retaining the marked source track",
                     externalId);
             }
-            return draft;
+            return draft with { BuildStatus = "failed", IsActive = false };
         }
 
         var cues = draft.Cues.ToList();
+        var repairFailed = false;
+        var anyRepairSucceeded = false;
         foreach (var range in draft.RepairRanges)
         {
             try
             {
-                var repaired = await audioTranscriber.TranscribeAsync(
+                var repairedCues = await audioTranscriber.TranscribeAsync(
                     new AudioTranscriptionRequest(
                         externalId,
                         audioPath,
@@ -77,17 +81,20 @@ public sealed class CanonicalSubtitleBuilder(
                         range.StartMs,
                         range.EndMs),
                     cancellationToken);
-                var normalized = canonicalizer.Normalize(repaired);
+                var normalized = canonicalizer.Normalize(repairedCues);
                 if (normalized.Count == 0)
                 {
+                    repairFailed = true;
                     continue;
                 }
 
                 cues.RemoveAll(cue => Overlaps(cue.StartMs, cue.EndMs, range.StartMs, range.EndMs));
                 cues.AddRange(normalized.Select(cue => ToWhisperCue(cue, draft.Language)));
+                anyRepairSucceeded = true;
             }
             catch (Exception exception) when (exception is MediaDownloadException or TimeoutException)
             {
+                repairFailed = true;
                 logger.LogWarning(
                     exception,
                     "Canonical subtitle repair failed for {ExternalId} at {StartMs}-{EndMs}; retaining source cues",
@@ -102,7 +109,9 @@ public sealed class CanonicalSubtitleBuilder(
             Cues = cues
                 .OrderBy(cue => cue.StartMs)
                 .ThenBy(cue => cue.EndMs)
-                .ToArray()
+                .ToArray(),
+            BuildStatus = repairFailed ? "repair-failed" : anyRepairSucceeded ? "repaired" : "normalized",
+            IsActive = !repairFailed && cues.All(cue => !cue.NeedsReview)
         };
     }
 

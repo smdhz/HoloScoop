@@ -4,9 +4,9 @@ using Quartz;
 namespace HoloScoop.Jobs;
 
 [DisallowConcurrentExecution]
-public sealed class ExpireCandidateTasksJob(
+public sealed class RedisCandidateSyncJob(
     IRedisCandidateSynchronizer synchronizer,
-    ILogger<ExpireCandidateTasksJob> logger) : IJob
+    ILogger<RedisCandidateSyncJob> logger) : IJob
 {
     public async Task Execute(IJobExecutionContext context)
     {

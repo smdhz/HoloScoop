@@ -11,7 +11,6 @@ public sealed class MediaTask
     public string? SpeakerNamesJson { get; set; }
     public string? ScheduledMemberName { get; set; }
     public TaskStatus Status { get; set; } = TaskStatus.PendingSelection;
-    public DateTimeOffset? ExpiresAt { get; set; }
     public int AttemptCount { get; set; }
     public string? LastError { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

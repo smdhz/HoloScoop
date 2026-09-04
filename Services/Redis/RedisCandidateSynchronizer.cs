@@ -29,7 +29,7 @@ public sealed class RedisCandidateSynchronizer(
         CancellationToken cancellationToken = default)
     {
         var candidates = await dbContext.Tasks
-            .Where(task => task.RedisStream == _options.StreamKey &&
+            .Where(task => task.RedisStream == _options.StreamName &&
                            task.DownloadMode == null &&
                            (task.Status == MediaTaskStatus.PendingSelection ||
                             task.Status == MediaTaskStatus.Expired))
@@ -58,25 +58,18 @@ public sealed class RedisCandidateSynchronizer(
             if (existsInRedis && task.Status == MediaTaskStatus.Expired)
             {
                 task.Status = MediaTaskStatus.PendingSelection;
-                task.ExpiresAt = null;
                 task.UpdatedAt = now;
                 activated++;
             }
             else if (!existsInRedis && task.Status == MediaTaskStatus.PendingSelection)
             {
                 task.Status = MediaTaskStatus.Expired;
-                task.ExpiresAt = null;
                 task.UpdatedAt = now;
                 expired++;
             }
-            else if (existsInRedis && task.ExpiresAt is not null)
-            {
-                // Clear values written by the removed local 24-hour expiration policy.
-                task.ExpiresAt = null;
-            }
         }
 
-        if (activated > 0 || expired > 0 || dbContext.ChangeTracker.HasChanges())
+        if (activated > 0 || expired > 0)
             await dbContext.SaveChangesAsync(cancellationToken);
 
         return new RedisCandidateSyncResult(activated, expired);
@@ -93,7 +86,7 @@ public sealed class RedisCandidateSynchronizer(
             return false;
 
         // Manually added tasks do not have a Redis lifecycle.
-        if (task.RedisStream != _options.StreamKey)
+        if (task.RedisStream != _options.StreamName)
             return task.Status == MediaTaskStatus.PendingSelection;
 
         var entries = await redis.GetDatabase().StreamRangeAsync(
@@ -106,14 +99,12 @@ public sealed class RedisCandidateSynchronizer(
         if (!existsInRedis && task.Status == MediaTaskStatus.PendingSelection)
         {
             task.Status = MediaTaskStatus.Expired;
-            task.ExpiresAt = null;
             task.UpdatedAt = DateTimeOffset.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
         }
         else if (existsInRedis && task.Status == MediaTaskStatus.Expired && task.DownloadMode is null)
         {
             task.Status = MediaTaskStatus.PendingSelection;
-            task.ExpiresAt = null;
             task.UpdatedAt = DateTimeOffset.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
         }

@@ -5,9 +5,7 @@ public sealed class RedisStreamOptions
     public const string SectionName = "Redis";
 
     public string ConnectionString { get; set; } = "localhost:6379";
-    public string StreamKey { get; set; } = "holoscoop:incoming";
-    // Compatibility with the existing Redis__StreamName deployment variable.
-    public string StreamName { get => StreamKey; set => StreamKey = value; }
+    public string StreamName { get; set; } = "holoscoop:incoming";
     public string ConsumerGroup { get; set; } = "holoscoop";
     public string ConsumerName { get; set; } = Environment.MachineName;
     public string GroupStartPosition { get; set; } = "0-0";
@@ -18,7 +16,7 @@ public sealed class RedisStreamOptions
     public void Validate()
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(ConnectionString);
-        ArgumentException.ThrowIfNullOrWhiteSpace(StreamKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(StreamName);
         ArgumentException.ThrowIfNullOrWhiteSpace(ConsumerGroup);
         ArgumentException.ThrowIfNullOrWhiteSpace(ConsumerName);
         ArgumentException.ThrowIfNullOrWhiteSpace(GroupStartPosition);

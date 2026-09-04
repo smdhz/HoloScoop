@@ -60,6 +60,7 @@ public sealed class MediaTaskProcessor(
         var result = await downloader.DownloadAsync(
             new MediaDownloadRequest(task.Id, task.Stream.ExternalId, sourceUrl, mode),
             cancellationToken);
+        await ApplyDownloadedMetadataAsync(task.Stream, result.MetadataRelativePath, cancellationToken);
 
         if ((mode is DownloadMode.VideoAndSubtitles or DownloadMode.VideoOnly) &&
             result.VideoRelativePaths.Count == 0)
@@ -156,10 +157,6 @@ public sealed class MediaTaskProcessor(
                      new { item.Subtitle.Language, item.Subtitle.Source }))
         {
             var sequence = 0;
-            var memo = SubtitleMemo.CreateRaw(
-                group.Key.Language,
-                group.Key.Source,
-                _options.WhisperModelPath);
             foreach (var track in group)
             {
                 foreach (var cue in track.Cues)
@@ -169,11 +166,20 @@ public sealed class MediaTaskProcessor(
                         StreamId = task.StreamId,
                         Language = group.Key.Language,
                         Source = group.Key.Source,
+                        TrackRole = "raw",
+                        DeclaredLanguage = group.Key.Language,
+                        OriginSource = group.Key.Source,
+                        GenerationVersion = 1,
+                        IsActive = true,
+                        NeedsReview = false,
+                        BuildStatus = "source",
+                        ModelVersion = group.Key.Source.Equals("whisper", StringComparison.OrdinalIgnoreCase)
+                            ? Path.GetFileName(_options.WhisperModelPath)
+                            : null,
                         Sequence = sequence++,
                         StartMs = cue.StartMs,
                         EndMs = cue.EndMs,
-                        Text = cue.Text,
-                        Memo = memo
+                        Text = cue.Text
                     });
                 }
             }
@@ -190,11 +196,22 @@ public sealed class MediaTaskProcessor(
                     StreamId = task.StreamId,
                     Language = canonical.Language,
                     Source = "canonical",
+                    TrackRole = "canonical",
+                    DeclaredLanguage = canonical.Language,
+                    OriginDeclaredLanguage = cue.DeclaredLanguage,
+                    OriginSource = cue.OriginSource,
+                    GenerationVersion = 1,
+                    IsActive = canonical.IsActive,
+                    NeedsReview = cue.NeedsReview,
+                    BaseTrackQuality = Math.Round(canonical.Quality, 4),
+                    BuildStatus = canonical.BuildStatus,
+                    DetectedLanguage = cue.DetectedLanguage,
+                    LanguageDetectionMethod = cue.DetectedLanguage is null ? null : "script",
+                    ModelVersion = cue.ModelVersion,
                     Sequence = sequence++,
                     StartMs = cue.StartMs,
                     EndMs = cue.EndMs,
-                    Text = cue.Text,
-                    Memo = SubtitleMemo.CreateCanonical(canonical, cue)
+                    Text = cue.Text
                 });
             }
         }
@@ -245,6 +262,8 @@ public sealed class MediaTaskProcessor(
                     StreamId = task.StreamId,
                     SpeakerLabel = turn.SpeakerLabel,
                     SpeakerName = confirmedSpeakerCount == 1 ? speakerNames[0] : null,
+                    SpeakerNameSource = confirmedSpeakerCount == 1 ? "confirmed-single" : null,
+                    SpeakerNameScore = confirmedSpeakerCount == 1 ? 1d : null,
                     SuggestedSpeakerName = suggestion?.MemberName,
                     SuggestedSpeakerScore = suggestion?.Score,
                     StartMs = turn.StartMs,
@@ -261,6 +280,8 @@ public sealed class MediaTaskProcessor(
                 foreach (var segment in segments.Where(segment => segment.SpeakerLabel != null))
                 {
                     segment.SpeakerName = speakerNames[0];
+                    segment.SpeakerNameSource = "confirmed-single";
+                    segment.SpeakerNameScore = 1d;
                 }
 
                 var embedding = embeddings.Values.FirstOrDefault();
@@ -279,10 +300,9 @@ public sealed class MediaTaskProcessor(
         var documentQuery = dbContext.SubtitleSegments
             .AsNoTracking()
             .Where(segment => segment.StreamId == task.StreamId);
-        if (canonical is not null)
-        {
-            documentQuery = documentQuery.Where(segment => segment.Source == "canonical");
-        }
+        documentQuery = canonical?.IsActive == true
+            ? documentQuery.Where(segment => segment.TrackRole == "canonical" && segment.IsActive)
+            : documentQuery.Where(segment => segment.TrackRole == "raw" && segment.IsActive);
         var documents = await documentQuery
             .Select(segment => new SubtitleSearchDocument(
                 segment.Id,
@@ -326,6 +346,64 @@ public sealed class MediaTaskProcessor(
 
         await dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    private async Task ApplyDownloadedMetadataAsync(
+        Data.Entities.Stream stream,
+        string? metadataRelativePath,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(metadataRelativePath))
+        {
+            return;
+        }
+
+        var path = ResolveLibraryPath(metadataRelativePath);
+        try
+        {
+            await using var input = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 64 * 1024,
+                useAsync: true);
+            using var document = await JsonDocument.ParseAsync(input, cancellationToken: cancellationToken);
+            var root = document.RootElement;
+
+            stream.ChannelId = GetString(root, "channel_id") ?? stream.ChannelId;
+            stream.ChannelName = GetString(root, "channel") ?? GetString(root, "uploader") ?? stream.ChannelName;
+            stream.Title = GetString(root, "title") ?? stream.Title;
+            stream.Description = GetString(root, "description") ?? stream.Description;
+            stream.ThumbnailUrl = GetString(root, "thumbnail") ?? stream.ThumbnailUrl;
+            stream.SourceUrl = GetString(root, "webpage_url") ?? stream.SourceUrl;
+            stream.ScheduledAt = GetUnixTimestamp(root, "release_timestamp") ?? stream.ScheduledAt;
+            stream.StartedAt = GetUnixTimestamp(root, "timestamp") ?? stream.StartedAt;
+            if (root.TryGetProperty("duration", out var duration) && duration.TryGetDouble(out var seconds))
+            {
+                stream.DurationMs = checked((long)Math.Round(seconds * 1000));
+            }
+            if (stream.StartedAt is not null && stream.DurationMs is not null)
+            {
+                stream.EndedAt = stream.StartedAt.Value.AddMilliseconds(stream.DurationMs.Value);
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or OverflowException)
+        {
+            logger.LogWarning(exception, "Could not import metadata for {ExternalId}", stream.ExternalId);
+        }
+    }
+
+    private static string? GetString(JsonElement root, string propertyName) =>
+        root.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
+
+    private static DateTimeOffset? GetUnixTimestamp(JsonElement root, string propertyName) =>
+        root.TryGetProperty(propertyName, out var property) && property.TryGetInt64(out var seconds)
+            ? DateTimeOffset.FromUnixTimeSeconds(seconds)
+            : null;
 
     private async Task<IReadOnlyDictionary<string, VoiceSuggestion>> MatchVoiceProfilesAsync(
         IReadOnlyDictionary<string, float[]> embeddings,
@@ -453,6 +531,13 @@ public sealed class MediaTaskProcessor(
         {
             segment.SpeakerLabel = null;
             segment.SpeakerName = null;
+            segment.SpeakerNameSource = null;
+            segment.SpeakerNameScore = null;
+            if (segment.TrackRole == "raw" &&
+                segment.Text.Split(">>", StringSplitOptions.None).Length > 2)
+            {
+                continue;
+            }
             var duration = Math.Max(1, segment.EndMs - segment.StartMs);
             var overlaps = turns
                 .Select(turn => new

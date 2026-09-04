@@ -22,7 +22,9 @@ internal sealed record CanonicalTrackDraft(
     string Language,
     IReadOnlyList<CanonicalSubtitleCue> Cues,
     double Quality,
-    IReadOnlyList<SubtitleRepairRange> RepairRanges);
+    IReadOnlyList<SubtitleRepairRange> RepairRanges,
+    string BuildStatus = "normalized",
+    bool IsActive = true);
 
 public sealed partial class SubtitleCanonicalizer
 {
@@ -30,6 +32,7 @@ public sealed partial class SubtitleCanonicalizer
     private const long RepetitionWindowMs = 30_000;
     private const long RepairMergeGapMs = 3_000;
     private const long MaximumRepairRangeMs = 120_000;
+    private const long TransientCueMaximumMs = 100;
 
     [GeneratedRegex("\\[[^\\]]+\\]", RegexOptions.CultureInvariant)]
     private static partial Regex AnnotationPattern();
@@ -77,7 +80,9 @@ public sealed partial class SubtitleCanonicalizer
     internal IReadOnlyList<ParsedSubtitleCue> Normalize(IReadOnlyList<ParsedSubtitleCue> cues)
     {
         var normalized = new List<ParsedSubtitleCue>(cues.Count);
-        foreach (var cue in cues.OrderBy(cue => cue.StartMs).ThenBy(cue => cue.EndMs))
+        foreach (var cue in ExpandSpeakerBoundaries(cues)
+                     .OrderBy(cue => cue.StartMs)
+                     .ThenBy(cue => cue.EndMs))
         {
             var text = cue.Text.Trim();
             var key = SearchKey(text);
@@ -89,10 +94,27 @@ public sealed partial class SubtitleCanonicalizer
             if (normalized.Count > 0)
             {
                 var previous = normalized[^1];
-                if (SearchKey(previous.Text).Equals(key, StringComparison.Ordinal) &&
+                var previousKey = SearchKey(previous.Text);
+                if (previousKey.Equals(key, StringComparison.Ordinal) &&
                     cue.StartMs <= previous.EndMs + DuplicateWindowMs)
                 {
                     normalized[^1] = previous with { EndMs = Math.Max(previous.EndMs, cue.EndMs) };
+                    continue;
+                }
+
+                if (cue.EndMs - cue.StartMs <= TransientCueMaximumMs &&
+                    cue.StartMs <= previous.EndMs + TransientCueMaximumMs)
+                {
+                    var mergedText = previousKey.EndsWith(key, StringComparison.Ordinal)
+                        ? previous.Text
+                        : key.EndsWith(previousKey, StringComparison.Ordinal)
+                            ? text
+                            : $"{previous.Text} {text}";
+                    normalized[^1] = previous with
+                    {
+                        EndMs = Math.Max(previous.EndMs, cue.EndMs),
+                        Text = mergedText
+                    };
                     continue;
                 }
             }
@@ -105,6 +127,34 @@ public sealed partial class SubtitleCanonicalizer
         }
 
         return normalized;
+    }
+
+    private static IEnumerable<ParsedSubtitleCue> ExpandSpeakerBoundaries(
+        IEnumerable<ParsedSubtitleCue> cues)
+    {
+        foreach (var cue in cues)
+        {
+            var parts = cue.Text.Split(">>", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length <= 1 || cue.EndMs - cue.StartMs < parts.Length)
+            {
+                yield return cue;
+                continue;
+            }
+
+            var duration = cue.EndMs - cue.StartMs;
+            var totalWeight = parts.Sum(part => Math.Max(1, SearchKey(part).Length));
+            var start = cue.StartMs;
+            for (var index = 0; index < parts.Length; index++)
+            {
+                var end = index == parts.Length - 1
+                    ? cue.EndMs
+                    : Math.Min(
+                        cue.EndMs - (parts.Length - index - 1),
+                        start + Math.Max(1, duration * Math.Max(1, SearchKey(parts[index]).Length) / totalWeight));
+                yield return new ParsedSubtitleCue(cue.Sequence, start, end, parts[index]);
+                start = end;
+            }
+        }
     }
 
     public static string BaseLanguage(string language)

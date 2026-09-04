@@ -29,7 +29,6 @@ public sealed class ProcessingTaskConfiguration : IEntityTypeConfiguration<Media
             .HasConversion<string>()
             .HasColumnType("varchar(32)")
             .IsRequired();
-        builder.Property(x => x.ExpiresAt).HasPrecision(3);
         builder.Property(x => x.AttemptCount).HasDefaultValue(0);
         builder.Property(x => x.LastError).HasColumnType("nvarchar(max)");
         builder.Property(x => x.SpeakerNamesJson).HasMaxLength(2000);
@@ -46,8 +45,8 @@ public sealed class ProcessingTaskConfiguration : IEntityTypeConfiguration<Media
         builder.HasIndex(x => new { x.RedisStream, x.RedisMessageId })
             .IsUnique()
             .HasDatabaseName("UX_Tasks_RedisStream_RedisMessageId");
-        builder.HasIndex(x => new { x.Status, x.ExpiresAt })
-            .HasDatabaseName("IX_Tasks_Status_ExpiresAt");
+        builder.HasIndex(x => new { x.Status, x.UpdatedAt })
+            .HasDatabaseName("IX_Tasks_Status_UpdatedAt");
         builder.HasIndex(x => x.StreamId).HasDatabaseName("IX_Tasks_StreamId");
     }
 }

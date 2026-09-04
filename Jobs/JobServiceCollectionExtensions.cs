@@ -19,7 +19,7 @@ public static class JobServiceCollectionExtensions
         services.AddQuartz(configurator =>
         {
             var expireKey = new JobKey("sync-redis-candidates");
-            configurator.AddJob<ExpireCandidateTasksJob>(options => options.WithIdentity(expireKey));
+            configurator.AddJob<RedisCandidateSyncJob>(options => options.WithIdentity(expireKey));
             configurator.AddTrigger(options => options
                 .WithIdentity("sync-redis-candidates-every-minute")
                 .ForJob(expireKey)

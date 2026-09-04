@@ -98,7 +98,6 @@ public sealed class IndexModel(
             "manual:note",
             scheduleId.ToString("D"),
             message,
-            expiresAt: null,
             cancellationToken);
 
         StatusMessage = result == CandidateSaveResult.Created
@@ -118,11 +117,11 @@ public sealed class IndexModel(
         int? speakerCount = mode == DownloadMode.VideoOnly
             ? null
             : speakerChoice switch
-        {
-            "single" => 1,
-            "multiple" when multipleSpeakerCount is >= 2 and <= 20 => multipleSpeakerCount.Value,
-            _ => 0
-        };
+            {
+                "single" => 1,
+                "multiple" when multipleSpeakerCount is >= 2 and <= 20 => multipleSpeakerCount.Value,
+                _ => 0
+            };
         if (mode != DownloadMode.VideoOnly && speakerCount == 0)
         {
             StatusMessage = "请选择单人直播，或输入 2 到 20 的实际发言人数。";

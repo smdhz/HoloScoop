@@ -1,5 +1,4 @@
 using HoloScoop.Services.Media;
-using System.Text.Json;
 using Xunit;
 
 namespace HoloScoop.Tests;
@@ -30,6 +29,53 @@ public sealed class SubtitleCanonicalizerTests
                 Assert.Equal(3_000, cue.EndMs);
             },
             cue => Assert.Equal("Next sentence.", cue.Text));
+    }
+
+    [Fact]
+    public void Normalize_MergesTransientRollingFragments()
+    {
+        var cues = new ParsedSubtitleCue[]
+        {
+            new(0, 0, 2_000, "That is it?"),
+            new(1, 2_000, 2_010, "it?"),
+            new(2, 2_010, 4_000, "Next sentence.")
+        };
+
+        var normalized = _canonicalizer.Normalize(cues);
+
+        Assert.Collection(
+            normalized,
+            cue =>
+            {
+                Assert.Equal("That is it?", cue.Text);
+                Assert.Equal(2_010, cue.EndMs);
+            },
+            cue => Assert.Equal("Next sentence.", cue.Text));
+    }
+
+    [Fact]
+    public void Normalize_SplitsSpeakerBoundaryBeforeDiarization()
+    {
+        var cues = new[]
+        {
+            new ParsedSubtitleCue(0, 1_000, 3_000, ">> Really? >> Yeah, four is better.")
+        };
+
+        var normalized = _canonicalizer.Normalize(cues);
+
+        Assert.Collection(
+            normalized,
+            cue =>
+            {
+                Assert.Equal("Really?", cue.Text);
+                Assert.Equal(1_000, cue.StartMs);
+            },
+            cue =>
+            {
+                Assert.Equal("Yeah, four is better.", cue.Text);
+                Assert.Equal(3_000, cue.EndMs);
+            });
+        Assert.Equal(normalized[0].EndMs, normalized[1].StartMs);
     }
 
     [Fact]
@@ -93,38 +139,4 @@ public sealed class SubtitleCanonicalizerTests
         Assert.Equal(expected, SubtitleCanonicalizer.DetectWrittenLanguage(text));
     }
 
-    [Fact]
-    public void SubtitleMemo_WritesOnlySupportedRawProperties()
-    {
-        using var memo = JsonDocument.Parse(SubtitleMemo.CreateRaw("en", "auto", "unused.bin"));
-
-        Assert.Equal("raw", memo.RootElement.GetProperty("trackRole").GetString());
-        Assert.Equal("en", memo.RootElement.GetProperty("declaredLanguage").GetString());
-        Assert.False(memo.RootElement.TryGetProperty("confidence", out _));
-        Assert.False(memo.RootElement.TryGetProperty("detectedLanguage", out _));
-        Assert.False(memo.RootElement.TryGetProperty("modelVersion", out _));
-    }
-
-    [Fact]
-    public void SubtitleMemo_WritesActualCanonicalCapabilities()
-    {
-        var cue = new CanonicalSubtitleCue(
-            0,
-            1_000,
-            "Hello.",
-            "whisper",
-            "en",
-            "en",
-            NeedsReview: false,
-            "ggml-small.bin");
-        var track = new CanonicalTrackDraft("en", [cue], 0.75, []);
-
-        using var memo = JsonDocument.Parse(SubtitleMemo.CreateCanonical(track, cue));
-
-        Assert.Equal("canonical", memo.RootElement.GetProperty("trackRole").GetString());
-        Assert.Equal("whisper", memo.RootElement.GetProperty("originSource").GetString());
-        Assert.Equal("en", memo.RootElement.GetProperty("detectedLanguage").GetString());
-        Assert.Equal("ggml-small.bin", memo.RootElement.GetProperty("modelVersion").GetString());
-        Assert.False(memo.RootElement.TryGetProperty("confidence", out _));
-    }
 }
