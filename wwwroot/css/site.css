@@ -42,9 +42,10 @@ body {
   width: 6rem;
 }
 
-.task-source-link {
-  justify-self: start;
-  white-space: nowrap;
+.task-selection-fallback {
+  --bs-btn-color: var(--bs-secondary-color);
+  --bs-btn-hover-color: var(--bs-body-color);
+  --bs-btn-active-color: var(--bs-body-color);
 }
 
 .recent-tasks-table {

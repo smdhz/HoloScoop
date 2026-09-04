@@ -15,17 +15,7 @@ public static class JobServiceCollectionExtensions
                 options => options.UnselectedRetentionDays > 0 && options.CompletedRetentionDays > 0,
                 "Maintenance retention periods must be positive.")
             .ValidateOnStart();
-        services.AddOptions<CanonicalSubtitleBackfillOptions>()
-            .Bind(configuration.GetSection(CanonicalSubtitleBackfillOptions.SectionName))
-            .Validate(options => options.BatchSize > 0,
-                "CanonicalSubtitleBackfill:BatchSize must be positive.")
-            .Validate(options => options.CandidateScanLimit >= options.BatchSize,
-                "CanonicalSubtitleBackfill:CandidateScanLimit must be at least BatchSize.")
-            .Validate(options => options.IntervalMinutes > 0,
-                "CanonicalSubtitleBackfill:IntervalMinutes must be positive.")
-            .ValidateOnStart();
         services.AddScoped<ITaskStateMachine, TaskStateMachine>();
-        services.AddScoped<CanonicalSubtitleBackfillService>();
         services.AddQuartz(configurator =>
         {
             var expireKey = new JobKey("sync-redis-candidates");
@@ -52,22 +42,6 @@ public static class JobServiceCollectionExtensions
                 .StartNow()
                 .WithSimpleSchedule(schedule => schedule.WithIntervalInHours(24).RepeatForever()));
 
-            if (configuration.GetValue<bool>($"{CanonicalSubtitleBackfillOptions.SectionName}:Enabled"))
-            {
-                // TEMPORARY DATA-MIGRATION JOB: delete this registration with
-                // CanonicalSubtitleBackfillJob after the legacy subtitle backfill is complete.
-                var backfillKey = new JobKey("backfill-canonical-subtitles-temporary");
-                configurator.AddJob<CanonicalSubtitleBackfillJob>(options =>
-                    options.WithIdentity(backfillKey));
-                configurator.AddTrigger(options => options
-                    .WithIdentity("backfill-canonical-subtitles-temporary-schedule")
-                    .ForJob(backfillKey)
-                    .StartNow()
-                    .WithSimpleSchedule(schedule => schedule
-                        .WithIntervalInMinutes(configuration.GetValue<int>(
-                            $"{CanonicalSubtitleBackfillOptions.SectionName}:IntervalMinutes"))
-                        .RepeatForever()));
-            }
         });
         services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
         return services;
