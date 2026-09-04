@@ -1,5 +1,5 @@
 FROM ghcr.io/denoland/deno:bin-2.9.5 AS deno
-FROM ghcr.io/ggerganov/whisper.cpp:main AS whisper
+FROM ghcr.io/ggml-org/whisper.cpp:main AS whisper
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
 WORKDIR /src
@@ -31,9 +31,9 @@ RUN apt-get update \
         python3-venv \
     && python3 -m venv /opt/yt-dlp \
     && /opt/yt-dlp/bin/pip install --no-cache-dir "yt-dlp[default,curl-cffi]" \
-    && whisper_path="$(find /opt/whisper/runtime -type f \( -name whisper-cli -o -name main \) -perm /111 -print -quit)" \
-    && test -n "$whisper_path" \
-    && ln -s "$whisper_path" /usr/local/bin/whisper-cli \
+    && test -x /opt/whisper/runtime/build/bin/whisper-cli \
+    && /opt/whisper/runtime/build/bin/whisper-cli --help >/dev/null \
+    && ln -s /opt/whisper/runtime/build/bin/whisper-cli /usr/local/bin/whisper-cli \
     && mkdir -p /opt/whisper/models \
     && curl --fail --location --silent --show-error \
         --output /opt/whisper/models/ggml-small.bin \
