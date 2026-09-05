@@ -19,6 +19,21 @@ public static class MediaSearchServiceCollectionExtensions
             .Validate(options => !string.IsNullOrWhiteSpace(options.WhisperExecutablePath), "Media:WhisperExecutablePath is required.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.WhisperModelPath), "Media:WhisperModelPath is required.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.WhisperLanguage), "Media:WhisperLanguage is required.")
+            .Validate(options => options.WhisperMaxContext >= 0, "Media:WhisperMaxContext cannot be negative.")
+            .Validate(options => !options.WhisperUseVad || !string.IsNullOrWhiteSpace(options.WhisperVadModelPath),
+                "Media:WhisperVadModelPath is required when VAD is enabled.")
+            .Validate(options => options.WhisperVadThreshold is > 0 and <= 1,
+                "Media:WhisperVadThreshold must be between zero and one.")
+            .Validate(options => options.WhisperVadMinSpeechDurationMs > 0,
+                "Media:WhisperVadMinSpeechDurationMs must be positive.")
+            .Validate(options => options.WhisperVadMinSilenceDurationMs > 0,
+                "Media:WhisperVadMinSilenceDurationMs must be positive.")
+            .Validate(options => options.WhisperVadMaxSpeechDurationSeconds > 0,
+                "Media:WhisperVadMaxSpeechDurationSeconds must be positive.")
+            .Validate(options => options.WhisperVadSpeechPadMs >= 0,
+                "Media:WhisperVadSpeechPadMs cannot be negative.")
+            .Validate(options => options.WhisperVadSamplesOverlapSeconds is >= 0 and <= 1,
+                "Media:WhisperVadSamplesOverlapSeconds must be between zero and one.")
             .Validate(options => options.WhisperThreads > 0, "Media:WhisperThreads must be positive.")
             .Validate(options => options.TranscriptionTimeout > TimeSpan.Zero, "Media:TranscriptionTimeout must be positive.")
             .ValidateOnStart();

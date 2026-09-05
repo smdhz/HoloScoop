@@ -75,6 +75,26 @@ public sealed class WhisperCppAudioTranscriber(
             "-f", transcriptionInput,
             "-l", request.Language,
             "-t", _options.WhisperThreads.ToString(CultureInfo.InvariantCulture),
+            "-mc", _options.WhisperMaxContext.ToString(CultureInfo.InvariantCulture));
+        if (_options.WhisperUseVad)
+        {
+            AddArguments(
+                startInfo,
+                "--vad",
+                "-vm", _options.WhisperVadModelPath,
+                "-vt", _options.WhisperVadThreshold.ToString(CultureInfo.InvariantCulture),
+                "-vspd", _options.WhisperVadMinSpeechDurationMs.ToString(CultureInfo.InvariantCulture),
+                "-vsd", _options.WhisperVadMinSilenceDurationMs.ToString(CultureInfo.InvariantCulture),
+                "-vmsd", _options.WhisperVadMaxSpeechDurationSeconds.ToString(CultureInfo.InvariantCulture),
+                "-vp", _options.WhisperVadSpeechPadMs.ToString(CultureInfo.InvariantCulture),
+                "-vo", _options.WhisperVadSamplesOverlapSeconds.ToString(CultureInfo.InvariantCulture));
+        }
+        if (_options.WhisperSuppressNonSpeechTokens)
+        {
+            AddArguments(startInfo, "-sns");
+        }
+        AddArguments(
+            startInfo,
             "-ovtt",
             "-of", outputPrefix);
 

@@ -28,7 +28,7 @@ services:
         condition: service_healthy
 
   meilisearch:
-    image: getmeili/meilisearch:v1.37
+    image: getmeili/meilisearch
     restart: unless-stopped
     environment:
       MEILI_ENV: "production"
