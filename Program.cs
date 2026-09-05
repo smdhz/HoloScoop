@@ -16,7 +16,7 @@ builder.Services.AddScoped<ITaskCommands, TaskCommands>();
 builder.Services.AddMediaAndSubtitleSearch(builder.Configuration);
 builder.Services.AddNoteScheduleLookup(builder.Configuration);
 builder.Services.AddRedisTaskIntake(builder.Configuration);
-builder.Services.AddHoloScoopJobScheduling(builder.Configuration);
+builder.Services.AddHoloScoopJobScheduling();
 
 var app = builder.Build();
 
