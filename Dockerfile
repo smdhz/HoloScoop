@@ -1,4 +1,4 @@
-FROM ghcr.io/denoland/deno AS deno
+FROM ghcr.io/denoland/deno:bin AS deno
 FROM ghcr.io/ggml-org/whisper.cpp:main AS whisper
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
