@@ -94,14 +94,9 @@ public sealed class SpeakersModel(
             {
                 var first = group.First();
                 var labelSubtitles = subtitlesByLabel.GetValueOrDefault(group.Key) ?? [];
-                var samples = PickSamples(group
-                    .Select(turn => (turn.StartMs, turn.EndMs))
-                    .ToArray())
-                    .Select(turn => new SpeakerSample(
-                        turn.StartMs,
-                        turn.EndMs,
-                        FindSampleText(turn.StartMs, turn.EndMs, labelSubtitles)))
-                    .ToArray();
+                var samples = PickSamples(
+                    group.Select(turn => (turn.StartMs, turn.EndMs)).ToArray(),
+                    labelSubtitles);
                 return new SpeakerMappingRow(
                     group.Key,
                     first.SpeakerName,
@@ -146,52 +141,71 @@ public sealed class SpeakersModel(
         return RedirectToPage(new { streamId });
     }
 
-    private static IReadOnlyList<(long StartMs, long EndMs)> PickSamples(
-        IReadOnlyCollection<(long StartMs, long EndMs)> turns)
+    private static IReadOnlyList<SpeakerSample> PickSamples(
+        IReadOnlyCollection<(long StartMs, long EndMs)> turns,
+        IReadOnlyCollection<SubtitleSample> subtitles)
     {
         var candidates = turns
             .Where(turn => turn.EndMs - turn.StartMs is >= 2_000 and <= 15_000)
-            .OrderByDescending(turn => turn.EndMs - turn.StartMs)
+            .Select(turn => CreateSampleCandidate(turn, subtitles))
+            .OrderByDescending(candidate => candidate.Text is not null)
+            .ThenByDescending(candidate => candidate.SubtitleOverlapMs)
+            .ThenByDescending(candidate => candidate.EndMs - candidate.StartMs)
             .ToList();
         if (candidates.Count == 0)
         {
-            candidates = turns.OrderByDescending(turn => turn.EndMs - turn.StartMs).ToList();
+            candidates = turns
+                .Select(turn => CreateSampleCandidate(turn, subtitles))
+                .OrderByDescending(candidate => candidate.Text is not null)
+                .ThenByDescending(candidate => candidate.SubtitleOverlapMs)
+                .ThenByDescending(candidate => candidate.EndMs - candidate.StartMs)
+                .ToList();
         }
 
-        var selected = new List<(long StartMs, long EndMs)>();
+        var selected = new List<SpeakerSample>();
         foreach (var candidate in candidates)
         {
             if (selected.All(sample => Math.Abs(sample.StartMs - candidate.StartMs) >= 30_000))
             {
-                selected.Add(candidate);
+                selected.Add(new SpeakerSample(candidate.StartMs, candidate.EndMs, candidate.Text));
                 if (selected.Count == 3) break;
             }
         }
-        return selected.OrderBy(turn => turn.StartMs).ToArray();
+        return selected.OrderBy(sample => sample.StartMs).ToArray();
     }
 
-    private static string? FindSampleText(
-        long startMs,
-        long endMs,
+    private static SampleCandidate CreateSampleCandidate(
+        (long StartMs, long EndMs) turn,
         IEnumerable<SubtitleSample> subtitles)
     {
-        return subtitles
+        var match = subtitles
             .Select(subtitle => new
             {
                 subtitle.Text,
-                Overlap = Math.Max(0, Math.Min(endMs, subtitle.EndMs) - Math.Max(startMs, subtitle.StartMs))
+                Overlap = Math.Max(
+                    0,
+                    Math.Min(turn.EndMs, subtitle.EndMs) - Math.Max(turn.StartMs, subtitle.StartMs))
             })
             .Where(item => item.Overlap > 0)
             .OrderByDescending(item => item.Overlap)
             .ThenByDescending(item => item.Text.Length)
-            .Select(item => item.Text)
             .FirstOrDefault();
+        return new SampleCandidate(
+            turn.StartMs,
+            turn.EndMs,
+            match?.Text,
+            match?.Overlap ?? 0);
     }
 
     public static string FormatTime(long milliseconds) =>
         TimeSpan.FromMilliseconds(milliseconds).ToString(@"hh\:mm\:ss");
 
     private sealed record SubtitleSample(string Label, long StartMs, long EndMs, string Text);
+    private sealed record SampleCandidate(
+        long StartMs,
+        long EndMs,
+        string? Text,
+        long SubtitleOverlapMs);
 
     public async Task<IActionResult> OnPostMapAsync(
         long streamId,

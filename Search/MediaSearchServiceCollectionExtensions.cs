@@ -26,8 +26,12 @@ public static class MediaSearchServiceCollectionExtensions
         services.AddOptions<SpeakerDiarizationOptions>()
             .Bind(configuration.GetSection(SpeakerDiarizationOptions.SectionName))
             .Validate(options => options.NumThreads > 0, "SpeakerDiarization:NumThreads must be positive.")
-            .Validate(options => options.MinimumSubtitleOverlapRatio is > 0 and <= 1,
-                "SpeakerDiarization:MinimumSubtitleOverlapRatio must be between zero and one.")
+            .Validate(options => options.MinimumSpeakerDominanceRatio is > 0.5 and <= 1,
+                "SpeakerDiarization:MinimumSpeakerDominanceRatio must be greater than 0.5 and at most 1.")
+            .Validate(options => options.MinimumDetectedSpeechMs >= 0,
+                "SpeakerDiarization:MinimumDetectedSpeechMs must not be negative.")
+            .Validate(options => options.MinimumSpeakerLeadMs >= 0,
+                "SpeakerDiarization:MinimumSpeakerLeadMs must not be negative.")
             .Validate(options => options.VoiceMatchThreshold is > 0 and <= 1,
                 "SpeakerDiarization:VoiceMatchThreshold must be between zero and one.")
             .Validate(options => options.VoiceMatchMinimumMargin is >= 0 and < 1,

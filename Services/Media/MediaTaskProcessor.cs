@@ -198,7 +198,12 @@ public sealed class MediaTaskProcessor(
             var segments = await dbContext.SubtitleSegments
                 .Where(segment => segment.StreamId == task.StreamId)
                 .ToListAsync(cancellationToken);
-            AssignSpeakerLabels(segments, turns, _diarizationOptions.MinimumSubtitleOverlapRatio);
+            AssignSpeakerLabels(
+                segments,
+                turns,
+                _diarizationOptions.MinimumSpeakerDominanceRatio,
+                _diarizationOptions.MinimumDetectedSpeechMs,
+                _diarizationOptions.MinimumSpeakerLeadMs);
             if (confirmedSpeakerCount == 1)
             {
                 foreach (var segment in segments.Where(segment => segment.SpeakerLabel != null))
@@ -444,7 +449,9 @@ public sealed class MediaTaskProcessor(
     internal static void AssignSpeakerLabels(
         IReadOnlyCollection<SubtitleSegment> segments,
         IReadOnlyCollection<DiarizedSpeakerTurn> turns,
-        double minimumOverlapRatio)
+        double minimumDominanceRatio,
+        long minimumDetectedSpeechMs,
+        long minimumSpeakerLeadMs)
     {
         foreach (var segment in segments)
         {
@@ -456,7 +463,6 @@ public sealed class MediaTaskProcessor(
             {
                 continue;
             }
-            var duration = Math.Max(1, segment.EndMs - segment.StartMs);
             var overlaps = turns
                 .Select(turn => new
                 {
@@ -475,12 +481,16 @@ public sealed class MediaTaskProcessor(
                 })
                 .OrderByDescending(item => item.Duration)
                 .ToArray();
-            if (overlaps.Length == 0 || overlaps[0].Duration / (double)duration < minimumOverlapRatio)
+            var detectedSpeechDuration = overlaps.Sum(item => item.Duration);
+            if (overlaps.Length == 0 ||
+                detectedSpeechDuration < minimumDetectedSpeechMs ||
+                overlaps[0].Duration / (double)detectedSpeechDuration < minimumDominanceRatio)
             {
                 continue;
             }
 
-            if (overlaps.Length > 1 && overlaps[0].Duration <= overlaps[1].Duration)
+            if (overlaps.Length > 1 &&
+                overlaps[0].Duration - overlaps[1].Duration < minimumSpeakerLeadMs)
             {
                 continue;
             }
