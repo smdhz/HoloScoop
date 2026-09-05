@@ -1,4 +1,4 @@
-FROM ghcr.io/denoland/deno:bin-2.9.5 AS deno
+FROM ghcr.io/denoland/deno AS deno
 FROM ghcr.io/ggml-org/whisper.cpp:main AS whisper
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
@@ -38,6 +38,10 @@ RUN apt-get update \
     && curl --fail --location --silent --show-error \
         --output /opt/whisper/models/ggml-small.bin \
         https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin \
+    && curl --fail --location --silent --show-error \
+        --output /opt/whisper/models/ggml-silero-v6.2.0.bin \
+        https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin \
+    && echo "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987  /opt/whisper/models/ggml-silero-v6.2.0.bin" | sha256sum --check \
     && mkdir -p /opt/sherpa-onnx \
     && curl --fail --location --silent --show-error \
         --output /tmp/sherpa-segmentation.tar.bz2 \
