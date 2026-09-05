@@ -14,6 +14,10 @@ public sealed class MediaProcessingOptions
     public string WhisperExecutablePath { get; set; } = "/usr/local/bin/whisper-cli";
     public string WhisperModelPath { get; set; } = "/opt/whisper/models/ggml-small.bin";
     public string WhisperLanguage { get; set; } = "ja";
-    public int WhisperThreads { get; set; } = 12;
+    // whisper.cpp generally scales best around the number of physical cores.
+    // Environment.ProcessorCount reports the logical processors available to
+    // this process (including container CPU limits), so assume two-way SMT for
+    // the automatic default. Media__WhisperThreads can still override it.
+    public int WhisperThreads { get; set; } = Math.Max(1, Environment.ProcessorCount / 2);
     public TimeSpan TranscriptionTimeout { get; set; } = TimeSpan.FromHours(12);
 }
