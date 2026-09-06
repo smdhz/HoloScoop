@@ -41,7 +41,7 @@ else
         @foreach (var video in Model.Videos)
         {
             <div class="col">
-                <article class="card h-100 overflow-hidden recent-project-card">
+                <article class="card h-100 overflow-hidden">
                     <a asp-page="/Watch" asp-route-streamId="@video.StreamId" class="text-decoration-none">
                         @if (!string.IsNullOrWhiteSpace(video.ThumbnailUrl))
                         {
@@ -50,7 +50,7 @@ else
                         }
                         else
                         {
-                            <div class="recent-project-thumbnail recent-project-thumbnail-placeholder"></div>
+                            <div class="recent-project-thumbnail bg-body-secondary"></div>
                         }
                     </a>
                     <div class="card-body">

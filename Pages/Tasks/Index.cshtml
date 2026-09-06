@@ -84,7 +84,9 @@ else
                                 <img class="task-thumbnail" src="@task.Stream.ThumbnailUrl" alt="" loading="lazy" />
                             }
                             <div class="min-width-0">
-                                <h3 class="h5 text-break">@task.Stream.Title</h3>
+                                <h3 class="h5 text-break">
+                                    <a href="@task.Stream.SourceUrl" target="_blank" rel="noopener">@task.Stream.Title</a>
+                                </h3>
                                 <div class="text-secondary small">@task.Stream.ChannelName · @task.Stream.ExternalId</div>
                             </div>
                         </div>
@@ -123,23 +125,15 @@ else
 <h2 class="h5">最近任务</h2>
 <div class="table-responsive">
     <table class="table align-middle recent-tasks-table">
-        <colgroup>
-            <col class="recent-task-title-column" />
-            <col class="recent-task-mode-column" />
-            <col class="recent-task-status-column" />
-            <col class="recent-task-attempt-column" />
-            <col class="recent-task-updated-column" />
-            <col class="recent-task-actions-column" />
-        </colgroup>
         <thead>
-            <tr><th>直播</th><th>模式</th><th>状态</th><th>尝试</th><th>更新时间</th><th></th></tr>
+            <tr><th class="recent-task-title-column">直播</th><th>模式</th><th>状态</th><th>尝试</th><th></th></tr>
         </thead>
         <tbody>
         @foreach (var task in Model.RecentTasks)
         {
             <tr>
                 <td title="@task.Stream.Title">
-                    <div class="recent-task-title">
+                    <div class="text-truncate">
                         @if (Model.HasLocalVideo(task.StreamId))
                         {
                             <a asp-page="/Watch" asp-route-streamId="@task.StreamId">@task.Stream.Title</a>
@@ -157,7 +151,6 @@ else
                 <td>@task.DownloadMode</td>
                 <td><span class="badge text-bg-secondary">@task.Status</span></td>
                 <td>@task.AttemptCount</td>
-                <td>@task.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
                 <td><div class="d-flex flex-wrap gap-2">
                     @if (task.Status == HoloScoop.Data.Entities.TaskStatus.Failed)
                     {

@@ -4,8 +4,11 @@ using HoloScoop.Services.Media;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 
 namespace HoloScoop.Pages.Search;
+
+public sealed record PopularTopic(string Query, int StreamCount);
 
 public sealed class IndexModel(
     ISubtitleSearchService searchService,
@@ -24,12 +27,14 @@ public sealed class IndexModel(
     public SubtitleSearchResult? Result { get; private set; }
     public string? ErrorMessage { get; private set; }
     public IReadOnlySet<long> LocalVideoStreamIds { get; private set; } = new HashSet<long>();
+    public IReadOnlyList<PopularTopic> PopularTopics { get; private set; } = [];
 
     [TempData]
     public string? StatusMessage { get; set; }
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
+        PopularTopics = await LoadPopularTopicsAsync(cancellationToken);
         Query = Query.Trim();
         if (Query.Length == 0)
             return;
@@ -57,6 +62,30 @@ public sealed class IndexModel(
 
     public bool HasLocalVideo(long streamId) => LocalVideoStreamIds.Contains(streamId);
 
+    private async Task<IReadOnlyList<PopularTopic>> LoadPopularTopicsAsync(
+        CancellationToken cancellationToken)
+    {
+        var recentTitles = await dbContext.Streams
+            .AsNoTracking()
+            .Where(stream => stream.SubtitleSegments.Any())
+            .OrderByDescending(stream => stream.UpdatedAt)
+            .Select(stream => stream.Title)
+            .Take(100)
+            .ToListAsync(cancellationToken);
+
+        return recentTitles
+            .SelectMany(title => HashtagPattern.Matches(title)
+                .Cast<Match>()
+                .Select(match => $"#{match.Groups["topic"].Value}")
+                .Distinct(StringComparer.OrdinalIgnoreCase))
+            .GroupBy(topic => topic, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new PopularTopic(group.Key, group.Count()))
+            .OrderByDescending(topic => topic.StreamCount)
+            .ThenBy(topic => topic.Query, StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToArray();
+    }
+
     public async Task<IActionResult> OnPostRebuildAsync(CancellationToken cancellationToken)
     {
         try
@@ -79,4 +108,8 @@ public sealed class IndexModel(
             ? $"{(int)value.TotalHours}:{value.Minutes:00}:{value.Seconds:00}"
             : $"{value.Minutes}:{value.Seconds:00}";
     }
+
+    private static readonly Regex HashtagPattern = new(
+        "[#＃](?<topic>[\\p{L}\\p{M}\\p{N}_ー-]{2,50})",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 }

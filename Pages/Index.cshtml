@@ -22,7 +22,7 @@ else
                 ? Url.Page("/Watch", new { streamId = project.StreamId })
                 : project.SourceUrl;
             <div class="col">
-                <article class="card h-100 overflow-hidden recent-project-card">
+                <article class="card h-100 overflow-hidden">
                     <a href="@projectUrl"
                        target="@(project.HasLocalVideo ? null : "_blank")"
                        rel="@(project.HasLocalVideo ? null : "noopener")"
@@ -36,7 +36,7 @@ else
                         }
                         else
                         {
-                            <div class="recent-project-thumbnail recent-project-thumbnail-placeholder"></div>
+                            <div class="recent-project-thumbnail bg-body-secondary"></div>
                         }
                     </a>
                     <div class="card-body">

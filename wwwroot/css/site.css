@@ -1,7 +1,3 @@
-.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
-}
-
 html {
   position: relative;
   min-height: 100%;
@@ -53,49 +49,15 @@ body {
   table-layout: fixed;
 }
 
-.recent-task-title-column { width: 40%; }
-.recent-task-mode-column { width: 13%; }
-.recent-task-status-column { width: 10%; }
-.recent-task-attempt-column { width: 6%; }
-.recent-task-updated-column { width: 13%; }
-.recent-task-actions-column { width: 18%; }
-
-.recent-task-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.recent-project-card {
-  transition: transform .15s ease, box-shadow .15s ease;
-}
-
-.recent-project-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 .5rem 1.25rem rgba(15, 23, 42, .12);
+.recent-task-title-column {
+  width: 34%;
 }
 
 .recent-project-thumbnail {
-  display: block;
-  width: 100%;
   aspect-ratio: 16 / 9;
   object-fit: cover;
-  background: #e2e8f0;
-}
-
-.recent-project-thumbnail-placeholder {
-  background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
 }
 
 .min-width-0 {
   min-width: 0;
-}
-
-.form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
-  color: var(--bs-secondary-color);
-  text-align: end;
-}
-
-.form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
-  text-align: start;
 }

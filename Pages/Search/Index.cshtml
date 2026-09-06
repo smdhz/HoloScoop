@@ -43,6 +43,25 @@
     </div>
 </form>
 
+@if (Model.PopularTopics.Count > 0)
+{
+    <section class="mb-4" aria-labelledby="popular-topics-title">
+        <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2">
+            <h2 id="popular-topics-title" class="h6 mb-0">热门话题</h2>
+            <span class="small text-secondary">来自最近处理的直播</span>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            @foreach (var topic in Model.PopularTopics)
+            {
+                <a class="btn btn-sm btn-outline-secondary rounded-pill"
+                   asp-page="/Search/Index" asp-route-q="@topic.Query">
+                    @topic.Query <span class="badge text-bg-secondary ms-1">@topic.StreamCount</span>
+                </a>
+            }
+        </div>
+    </section>
+}
+
 @if (Model.ErrorMessage is not null)
 {
     <div class="alert alert-danger">@Model.ErrorMessage</div>

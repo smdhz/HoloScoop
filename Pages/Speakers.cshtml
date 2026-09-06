@@ -46,7 +46,7 @@ else
     }
     else
     {
-        <div class="alert alert-warning d-flex justify-content-between align-items-center gap-3">
+        <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-3">
             <span>本地没有可播放的视频或音频；之前删除的试听音频无法直接恢复。</span>
             @if (Model.CanRestorePlaybackAudio)
             {
@@ -57,64 +57,58 @@ else
             }
         </div>
     }
-    <div class="table-responsive">
-        <table class="table align-middle">
-            <thead>
-                <tr><th>标签</th><th>发言段</th><th>已归属字幕</th><th style="min-width: 24rem">试听样本</th><th>成员姓名</th></tr>
-            </thead>
-            <tbody>
-            @foreach (var speaker in Model.Speakers)
-            {
-                <tr>
-                    <td><code>@speaker.Label</code></td>
-                    <td>@speaker.TurnCount</td>
-                    <td>@speaker.SubtitleCount</td>
-                    <td>
-                        <div class="vstack gap-2">
-                            @foreach (var sample in speaker.Samples)
-                            {
-                                <div>
-                                    <button type="button" class="btn btn-sm btn-outline-primary speaker-sample"
-                                            disabled="@(!Model.HasPlayableMedia)"
-                                            data-start="@(sample.StartMs / 1000d)"
-                                            data-end="@(sample.EndMs / 1000d)">
-                                        ▶ @SpeakersModel.FormatTime(sample.StartMs)
-                                    </button>
-                                    @if (!string.IsNullOrWhiteSpace(sample.Text))
-                                    {
-                                        <span class="small ms-2">@sample.Text</span>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    </td>
-                    <td>
-                        <form method="post" asp-page-handler="Map" class="d-flex align-items-start gap-2">
-                            <input type="hidden" name="streamId" value="@Model.StreamId" />
-                            <input type="hidden" name="label" value="@speaker.Label" />
-                            <div class="flex-grow-1">
-                                <input class="form-control speaker-name-input" name="name" value="@(speaker.Name ?? speaker.SuggestedName)"
-                                       list="speaker-name-options" maxlength="256" autocomplete="off"
-                                       placeholder="输入或选择主播名" />
-                                @if (speaker.Name is null && speaker.SuggestedName is not null)
+    <div class="vstack gap-3">
+        @foreach (var speaker in Model.Speakers)
+        {
+            <article class="card">
+                <div class="card-header d-flex flex-wrap align-items-center gap-2 gap-sm-3">
+                    <code>@speaker.Label</code>
+                    <span class="small text-secondary">发言段：@speaker.TurnCount</span>
+                    <span class="small text-secondary">已归属字幕：@speaker.SubtitleCount</span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-4">
+                        <section class="col-12 col-lg-8">
+                            <h2 class="h6">试听样本</h2>
+                            <div class="vstack gap-2">
+                                @foreach (var sample in speaker.Samples)
                                 {
-                                    <div class="form-text">
-                                        声纹建议：@speaker.SuggestedName
-                                        @if (speaker.SuggestedScore is not null)
+                                    <div class="d-flex align-items-start gap-2">
+                                        <button type="button" class="btn btn-sm btn-outline-primary speaker-sample flex-shrink-0"
+                                                disabled="@(!Model.HasPlayableMedia)"
+                                                data-start="@(sample.StartMs / 1000d)"
+                                                data-end="@(sample.EndMs / 1000d)">
+                                            ▶ @SpeakersModel.FormatTime(sample.StartMs)
+                                        </button>
+                                        @if (!string.IsNullOrWhiteSpace(sample.Text))
                                         {
-                                            <span>（相似度 @speaker.SuggestedScore.Value.ToString("P1")）</span>
+                                            <span class="small text-break">@sample.Text</span>
                                         }
-                                        ，保存后才会作为确认姓名写入字幕。
                                     </div>
                                 }
                             </div>
-                            <button class="btn btn-primary text-nowrap" type="submit">保存</button>
-                        </form>
-                    </td>
-                </tr>
-            }
-            </tbody>
-        </table>
+                        </section>
+                        <section class="col-12 col-lg-4">
+                            <h2 class="h6">成员姓名</h2>
+                            <form method="post" asp-page-handler="Map">
+                                <input type="hidden" name="streamId" value="@Model.StreamId" />
+                                <input type="hidden" name="label" value="@speaker.Label" />
+                                <div class="input-group">
+                                    <input class="form-control speaker-name-input" name="name" value="@(speaker.Name ?? speaker.SuggestedName)"
+                                           list="speaker-name-options" maxlength="256" autocomplete="off"
+                                           aria-label="@speaker.Label 的成员姓名" placeholder="输入或选择主播名" />
+                                    <button class="btn btn-primary" type="submit">保存</button>
+                                </div>
+                                @if (speaker.Name is null && speaker.SuggestedName is not null)
+                                {
+                                    <div class="form-text">声纹建议：@speaker.SuggestedName @(speaker.SuggestedScore is null ? string.Empty : $"（相似度 {speaker.SuggestedScore.Value:P1}）")</div>
+                                }
+                            </form>
+                        </section>
+                    </div>
+                </div>
+            </article>
+        }
     </div>
 
     <datalist id="speaker-name-options">
