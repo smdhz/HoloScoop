@@ -104,6 +104,7 @@ public sealed class MediaTaskProcessor(
             .Where(cue =>
                 cue.StartMs >= 0 &&
                 cue.EndMs > cue.StartMs &&
+                cue.EndMs - cue.StartMs <= (long)_options.WhisperMaxSubtitleDurationSeconds * 1000 &&
                 !string.IsNullOrWhiteSpace(cue.Text))
             .OrderBy(cue => cue.StartMs)
             .ThenBy(cue => cue.EndMs)
@@ -112,7 +113,7 @@ public sealed class MediaTaskProcessor(
         if (rejectedCueCount > 0)
         {
             logger.LogWarning(
-                "Discarded {RejectedCueCount} invalid Whisper cue(s) for {ExternalId}",
+                "Discarded {RejectedCueCount} invalid or overlong Whisper cue(s) for {ExternalId}",
                 rejectedCueCount,
                 task.Stream.ExternalId);
         }

@@ -1,20 +1,20 @@
 @page
 @model HoloScoop.Pages.Videos.IndexModel
 @{
-    ViewData["Title"] = "已下载视频";
+    ViewData["Title"] = "已下载";
 }
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
     <div>
-        <h1 class="h4 mb-1">已下载视频</h1>
-        <p class="text-secondary mb-0">仅显示成功下载过视频的直播，不包含仅字幕任务。</p>
+        <h1 class="h4 mb-1">已下载</h1>
+        <p class="text-secondary mb-0">查看并下载已保存的视频和全部转写字幕文件。</p>
     </div>
     <a class="btn btn-outline-secondary" asp-page="/Videos/Index">刷新</a>
 </div>
 
 <form method="get" class="row g-2 mb-4">
     <div class="col-md">
-        <label class="visually-hidden" for="q">检索视频</label>
+        <label class="visually-hidden" for="q">检索已下载内容</label>
         <input id="q" class="form-control" name="q" value="@Model.Query"
                placeholder="按标题、主播或视频 ID 检索" />
     </div>
@@ -29,24 +29,24 @@
     }
 </form>
 
-@if (Model.Videos.Count == 0)
+@if (Model.Downloads.Count == 0)
 {
     <div class="empty-state">
-        @(string.IsNullOrWhiteSpace(Model.Query) ? "还没有已下载的视频。" : "没有找到匹配的视频。")
+        @(string.IsNullOrWhiteSpace(Model.Query) ? "还没有已下载的内容。" : "没有找到匹配的已下载内容。")
     </div>
 }
 else
 {
     <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-4">
-        @foreach (var video in Model.Videos)
+        @foreach (var download in Model.Downloads)
         {
             <div class="col">
                 <article class="card h-100 overflow-hidden">
-                    <a asp-page="/Watch" asp-route-streamId="@video.StreamId" class="text-decoration-none">
-                        @if (!string.IsNullOrWhiteSpace(video.ThumbnailUrl))
+                    <a asp-page="/Watch" asp-route-streamId="@download.StreamId" class="text-decoration-none">
+                        @if (!string.IsNullOrWhiteSpace(download.ThumbnailUrl))
                         {
                             <img class="card-img-top recent-project-thumbnail"
-                                 src="@video.ThumbnailUrl" alt="" loading="lazy" />
+                                 src="@download.ThumbnailUrl" alt="" loading="lazy" />
                         }
                         else
                         {
@@ -55,18 +55,31 @@ else
                     </a>
                     <div class="card-body">
                         <h2 class="h6 card-title mb-2">
-                            <a asp-page="/Watch" asp-route-streamId="@video.StreamId"
-                               class="text-reset text-decoration-none">@video.Title</a>
+                            <a asp-page="/Watch" asp-route-streamId="@download.StreamId"
+                               class="text-reset text-decoration-none">@download.Title</a>
                         </h2>
-                        @if (!string.IsNullOrWhiteSpace(video.ChannelName))
+                        @if (!string.IsNullOrWhiteSpace(download.ChannelName))
                         {
-                            <div class="small text-secondary text-truncate">@video.ChannelName</div>
+                            <div class="small text-secondary text-truncate">@download.ChannelName</div>
                         }
-                        <div class="small text-secondary text-truncate">@video.ExternalId</div>
+                        <div class="small text-secondary text-truncate">@download.ExternalId</div>
+                        <div class="d-flex flex-wrap gap-2 mt-3">
+                            @if (download.HasVideo)
+                            {
+                                <a class="btn btn-sm btn-outline-primary"
+                                   href="/api/streams/@download.StreamId/video?download=true">下载视频</a>
+                            }
+                            @foreach (var subtitle in download.SubtitleFiles)
+                            {
+                                <a class="btn btn-sm btn-outline-secondary"
+                                   href="@($"/api/streams/{download.StreamId}/subtitles/{Uri.EscapeDataString(subtitle.FileName)}")"
+                                   title="@subtitle.FileName">下载字幕：@subtitle.FileName</a>
+                            }
+                        </div>
                     </div>
                     <div class="card-footer d-flex justify-content-between align-items-center gap-2 bg-transparent border-0 pt-0">
-                        <span class="small text-secondary">@video.DownloadedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
-                        <a class="small" href="@video.SourceUrl" target="_blank" rel="noopener">来源</a>
+                        <span class="small text-secondary">@download.SavedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                        <a class="small" href="@download.SourceUrl" target="_blank" rel="noopener">来源</a>
                     </div>
                 </article>
             </div>
@@ -75,7 +88,7 @@ else
 
     @if (Model.TotalPages > 1)
     {
-        <nav class="d-flex justify-content-center align-items-center gap-3 mt-4" aria-label="视频分页">
+        <nav class="d-flex justify-content-center align-items-center gap-3 mt-4" aria-label="已下载内容分页">
             @if (Model.PageNumber > 1)
             {
                 <a class="btn btn-outline-secondary"

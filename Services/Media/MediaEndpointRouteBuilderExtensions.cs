@@ -9,6 +9,9 @@ public static class MediaEndpointRouteBuilderExtensions
     {
         endpoints.MapGet("/api/streams/{streamId:long}/video", GetVideoAsync);
         endpoints.MapGet("/api/streams/{streamId:long}/audio", GetAudioAsync);
+        endpoints.MapGet(
+            "/api/streams/{streamId:long}/subtitles/{fileName}",
+            GetSubtitleAsync);
         return endpoints;
     }
 
@@ -16,7 +19,8 @@ public static class MediaEndpointRouteBuilderExtensions
         long streamId,
         HoloScoopDbContext dbContext,
         ILocalMediaLibrary mediaLibrary,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool download = false)
     {
         var externalId = await dbContext.Streams
             .AsNoTracking()
@@ -34,6 +38,7 @@ public static class MediaEndpointRouteBuilderExtensions
             : Results.File(
                 video.Path,
                 video.ContentType,
+                fileDownloadName: download ? Path.GetFileName(video.Path) : null,
                 enableRangeProcessing: true,
                 lastModified: video.LastModified);
     }
@@ -62,5 +67,34 @@ public static class MediaEndpointRouteBuilderExtensions
                 audio.ContentType,
                 enableRangeProcessing: true,
                 lastModified: audio.LastModified);
+    }
+
+    private static async Task<IResult> GetSubtitleAsync(
+        long streamId,
+        string fileName,
+        HoloScoopDbContext dbContext,
+        ILocalMediaLibrary mediaLibrary,
+        CancellationToken cancellationToken)
+    {
+        var externalId = await dbContext.Streams
+            .AsNoTracking()
+            .Where(stream => stream.Id == streamId)
+            .Select(stream => stream.ExternalId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (externalId is null)
+        {
+            return Results.NotFound();
+        }
+
+        var subtitle = mediaLibrary.FindSubtitles(externalId)
+            .SingleOrDefault(candidate =>
+                string.Equals(candidate.FileName, fileName, StringComparison.Ordinal));
+        return subtitle is null
+            ? Results.NotFound()
+            : Results.File(
+                subtitle.Path,
+                subtitle.ContentType,
+                fileDownloadName: subtitle.FileName,
+                lastModified: subtitle.LastModified);
     }
 }

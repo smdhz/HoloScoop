@@ -5,6 +5,7 @@ using HoloScoop.Services.Note;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace HoloScoop.Pages;
 
@@ -23,7 +24,8 @@ public sealed class SpeakersModel(
     HoloScoopDbContext dbContext,
     ISubtitleSearchService searchService,
     ILocalMediaLibrary mediaLibrary,
-    SpeakerNameCatalog speakerNameCatalog) : PageModel
+    SpeakerNameCatalog speakerNameCatalog,
+    IOptions<MediaProcessingOptions> mediaOptions) : PageModel
 {
     public long StreamId { get; private set; }
     public string Title { get; private set; } = string.Empty;
@@ -87,6 +89,8 @@ public sealed class SpeakersModel(
         var subtitlesByLabel = subtitles
             .GroupBy(segment => segment.Label)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+        var maximumSubtitleDurationMs =
+            (long)mediaOptions.Value.WhisperMaxSubtitleDurationSeconds * 1000;
         Speakers = turns
             .GroupBy(turn => turn.SpeakerLabel)
             .OrderBy(group => group.Key)
@@ -96,7 +100,9 @@ public sealed class SpeakersModel(
                 var labelSubtitles = subtitlesByLabel.GetValueOrDefault(group.Key) ?? [];
                 var samples = PickSamples(
                     group.Select(turn => (turn.StartMs, turn.EndMs)).ToArray(),
-                    labelSubtitles);
+                    labelSubtitles
+                        .Where(subtitle => subtitle.EndMs - subtitle.StartMs <= maximumSubtitleDurationMs)
+                        .ToArray());
                 return new SpeakerMappingRow(
                     group.Key,
                     first.SpeakerName,

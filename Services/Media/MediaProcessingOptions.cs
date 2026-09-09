@@ -24,6 +24,7 @@ public sealed class MediaProcessingOptions
     public int WhisperVadSpeechPadMs { get; set; } = 200;
     public double WhisperVadSamplesOverlapSeconds { get; set; } = 0.1;
     public bool WhisperSuppressNonSpeechTokens { get; set; } = true;
+    public int WhisperMaxSubtitleDurationSeconds { get; set; } = 30;
     // whisper.cpp generally scales best around the number of physical cores.
     // Environment.ProcessorCount reports the logical processors available to
     // this process (including container CPU limits), so assume two-way SMT for

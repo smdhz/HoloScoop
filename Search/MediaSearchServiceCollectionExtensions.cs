@@ -34,6 +34,8 @@ public static class MediaSearchServiceCollectionExtensions
                 "Media:WhisperVadSpeechPadMs cannot be negative.")
             .Validate(options => options.WhisperVadSamplesOverlapSeconds is >= 0 and <= 1,
                 "Media:WhisperVadSamplesOverlapSeconds must be between zero and one.")
+            .Validate(options => options.WhisperMaxSubtitleDurationSeconds > 0,
+                "Media:WhisperMaxSubtitleDurationSeconds must be positive.")
             .Validate(options => options.WhisperThreads > 0, "Media:WhisperThreads must be positive.")
             .Validate(options => options.TranscriptionTimeout > TimeSpan.Zero, "Media:TranscriptionTimeout must be positive.")
             .ValidateOnStart();
