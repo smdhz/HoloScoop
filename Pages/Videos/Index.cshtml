@@ -7,7 +7,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
     <div>
         <h1 class="h4 mb-1">已下载</h1>
-        <p class="text-secondary mb-0">查看并下载已保存的视频和全部转写字幕文件。</p>
+        <p class="text-secondary mb-0">查看并下载已保存的视频、音频和转写字幕文件。</p>
     </div>
     <a class="btn btn-outline-secondary" asp-page="/Videos/Index">刷新</a>
 </div>
@@ -29,7 +29,7 @@
     }
 </form>
 
-@if (Model.Downloads.Count == 0)
+@if (Model.VideoDownloads.Count == 0 && Model.AudioDownloads.Count == 0)
 {
     <div class="empty-state">
         @(string.IsNullOrWhiteSpace(Model.Query) ? "还没有已下载的内容。" : "没有找到匹配的已下载内容。")
@@ -37,8 +37,11 @@
 }
 else
 {
-    <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-4">
-        @foreach (var download in Model.Downloads)
+    @if (Model.VideoDownloads.Count > 0)
+    {
+        <h2 class="h5 mb-3">视频</h2>
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-4">
+        @foreach (var download in Model.VideoDownloads)
         {
             <div class="col">
                 <article class="card h-100 overflow-hidden">
@@ -64,11 +67,8 @@ else
                         }
                         <div class="small text-secondary text-truncate">@download.ExternalId</div>
                         <div class="d-flex flex-wrap gap-2 mt-3">
-                            @if (download.HasVideo)
-                            {
-                                <a class="btn btn-sm btn-outline-primary"
-                                   href="/api/streams/@download.StreamId/video?download=true">下载视频</a>
-                            }
+                            <a class="btn btn-sm btn-outline-primary"
+                               href="/api/streams/@download.StreamId/video?download=true">下载视频</a>
                             @foreach (var subtitle in download.SubtitleFiles)
                             {
                                 <a class="btn btn-sm btn-outline-secondary"
@@ -84,7 +84,52 @@ else
                 </article>
             </div>
         }
-    </div>
+        </div>
+    }
+
+    @if (Model.AudioDownloads.Count > 0)
+    {
+        <h2 class="h5 mb-3 @(Model.VideoDownloads.Count > 0 ? "mt-5" : null)">纯音频</h2>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th scope="col">标题</th>
+                        <th scope="col">主播</th>
+                        <th scope="col">保存时间</th>
+                        <th scope="col">文件</th>
+                        <th scope="col" class="text-end">来源</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var download in Model.AudioDownloads)
+                {
+                    <tr>
+                        <td>
+                            <div>@download.Title</div>
+                            <div class="small text-secondary">@download.ExternalId</div>
+                        </td>
+                        <td>@(download.ChannelName ?? "—")</td>
+                        <td class="text-nowrap">@download.SavedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>
+                            <div class="d-flex flex-wrap gap-2">
+                                <a class="btn btn-sm btn-outline-primary"
+                                   href="/api/streams/@download.StreamId/audio?download=true">下载音频</a>
+                                @foreach (var subtitle in download.SubtitleFiles)
+                                {
+                                    <a class="btn btn-sm btn-outline-secondary"
+                                       href="@($"/api/streams/{download.StreamId}/subtitles/{Uri.EscapeDataString(subtitle.FileName)}")"
+                                       title="@subtitle.FileName">下载字幕：@subtitle.FileName</a>
+                                }
+                            </div>
+                        </td>
+                        <td class="text-end"><a href="@download.SourceUrl" target="_blank" rel="noopener">来源</a></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
 
     @if (Model.TotalPages > 1)
     {

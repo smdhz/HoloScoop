@@ -47,7 +47,8 @@ public static class MediaEndpointRouteBuilderExtensions
         long streamId,
         HoloScoopDbContext dbContext,
         ILocalMediaLibrary mediaLibrary,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool download = false)
     {
         var externalId = await dbContext.Streams
             .AsNoTracking()
@@ -65,6 +66,7 @@ public static class MediaEndpointRouteBuilderExtensions
             : Results.File(
                 audio.Path,
                 audio.ContentType,
+                fileDownloadName: download ? Path.GetFileName(audio.Path) : null,
                 enableRangeProcessing: true,
                 lastModified: audio.LastModified);
     }

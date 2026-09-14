@@ -16,7 +16,8 @@ public sealed class IndexModel(
     [BindProperty(SupportsGet = true, Name = "p")]
     public int PageNumber { get; set; } = 1;
 
-    public IReadOnlyList<DownloadedItem> Downloads { get; private set; } = [];
+    public IReadOnlyList<DownloadedItem> VideoDownloads { get; private set; } = [];
+    public IReadOnlyList<DownloadedItem> AudioDownloads { get; private set; } = [];
     public int TotalCount { get; private set; }
     public int TotalPages => Math.Max(1, (TotalCount + PageSize - 1) / PageSize);
 
@@ -40,12 +41,8 @@ public sealed class IndexModel(
                 stream.ExternalId.Contains(Query));
         }
 
-        TotalCount = await downloads.CountAsync(cancellationToken);
-        PageNumber = Math.Clamp(PageNumber, 1, TotalPages);
         var rows = await downloads
             .OrderByDescending(stream => stream.UpdatedAt)
-            .Skip((PageNumber - 1) * PageSize)
-            .Take(PageSize)
             .Select(stream => new
             {
                 StreamId = stream.Id,
@@ -58,7 +55,7 @@ public sealed class IndexModel(
             })
             .ToListAsync(cancellationToken);
 
-        Downloads = rows
+        var availableDownloads = rows
             .Select(row => new DownloadedItem(
                 row.StreamId,
                 row.Title,
@@ -68,11 +65,22 @@ public sealed class IndexModel(
                 row.ThumbnailUrl,
                 row.SavedAt,
                 mediaLibrary.FindVideo(row.ExternalId) is not null,
+                mediaLibrary.FindAudio(row.ExternalId) is not null,
                 mediaLibrary.FindSubtitles(row.ExternalId)
                     .Select(file => new SubtitleFileItem(file.FileName))
                     .ToArray()))
-            .Where(item => item.HasVideo || item.SubtitleFiles.Count > 0)
+            .Where(item => item.HasVideo || item.HasAudio)
             .ToList();
+
+        TotalCount = availableDownloads.Count;
+        PageNumber = Math.Clamp(PageNumber, 1, TotalPages);
+        var page = availableDownloads
+            .Skip((PageNumber - 1) * PageSize)
+            .Take(PageSize)
+            .ToList();
+
+        VideoDownloads = page.Where(item => item.HasVideo).ToList();
+        AudioDownloads = page.Where(item => !item.HasVideo && item.HasAudio).ToList();
     }
 
     public sealed record DownloadedItem(
@@ -84,6 +92,7 @@ public sealed class IndexModel(
         string? ThumbnailUrl,
         DateTimeOffset SavedAt,
         bool HasVideo,
+        bool HasAudio,
         IReadOnlyList<SubtitleFileItem> SubtitleFiles);
 
     public sealed record SubtitleFileItem(string FileName);
