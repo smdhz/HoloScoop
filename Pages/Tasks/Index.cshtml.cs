@@ -57,6 +57,7 @@ public sealed class IndexModel(
             .AsNoTracking()
             .Include(task => task.Stream)
             .Where(task => task.Status != MediaTaskStatus.PendingSelection &&
+                           task.Status != MediaTaskStatus.Expired &&
                            task.Status != MediaTaskStatus.Completed)
             .OrderByDescending(task => task.UpdatedAt)
             .Take(50)
