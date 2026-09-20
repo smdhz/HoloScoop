@@ -2,6 +2,7 @@ using HoloScoop.Data;
 using HoloScoop.Search;
 using HoloScoop.Services.Media;
 using HoloScoop.Services.Note;
+using HoloScoop.Services.Redis;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +25,7 @@ public sealed class SpeakersModel(
     HoloScoopDbContext dbContext,
     ISubtitleSearchService searchService,
     ILocalMediaLibrary mediaLibrary,
+    IMediaTaskQueue taskQueue,
     SpeakerNameCatalog speakerNameCatalog,
     IOptions<MediaProcessingOptions> mediaOptions) : PageModel
 {
@@ -143,6 +145,7 @@ public sealed class SpeakersModel(
         task.Status = Data.Entities.TaskStatus.Queued;
         task.LastError = null;
         await dbContext.SaveChangesAsync(cancellationToken);
+        await taskQueue.PublishAsync(task.Id, cancellationToken);
         StatusMessage = "已重新加入队列；任务会重新处理字幕和发言人结果，并在完成后保留试听音频。";
         return RedirectToPage(new { streamId });
     }

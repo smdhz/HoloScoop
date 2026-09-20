@@ -15,7 +15,8 @@ HoloScoop 是一个面向 Hololive 直播内容的本地化采集、转写与检
 - 定期检查原 Redis 消息是否仍然存在，并同步未选择候选项的有效状态。
 - 仅展示已经开播至少一小时、仍可处理的候选任务。
 - 支持失败原因展示、失败任务重试和中断任务恢复。
-- 使用 Quartz.NET 调度候选同步、队列处理和历史数据清理作业。
+- 用户确认、失败重试或启动恢复后，将任务 ID 写入独立的 Redis Stream，由 Consumer Group 即时分发媒体处理。
+- 使用 ASP.NET Core `BackgroundService` 承载 Stream 消费、候选同步和队列通知补偿，不依赖通用调度框架。
 
 ### 媒体下载与本地转写
 
@@ -55,12 +56,12 @@ HoloScoop 是一个面向 Hololive 直播内容的本地化采集、转写与检
 ## 系统架构
 
 ```text
-Redis Stream ──┐
-               ├──> 候选任务 ──> 人工确认 ──> Quartz 处理队列
-管理页面 ──────┘                              │
-                                             ├──> yt-dlp / ffmpeg
-Note SQL Server ──> 日程资料补全              ├──> whisper.cpp
-                                             └──> sherpa-onnx
+入站 Redis Stream ──┐
+                    ├──> 候选任务 ──> 人工确认 ──> 媒体任务 Redis Stream
+管理页面 ───────────┘                                      │
+                                                          ├──> yt-dlp / ffmpeg
+Note SQL Server ──> 日程资料补全                           ├──> whisper.cpp
+                                                          └──> sherpa-onnx
                                                        │
                                   ┌────────────────────┴──────────────┐
                                   ▼                                   ▼
@@ -74,7 +75,7 @@ Note SQL Server ──> 日程资料补全              ├──> whisper.cpp
 - .NET 10 与 ASP.NET Core Razor Pages
 - Entity Framework Core 与 Microsoft SQL Server
 - Redis Streams
-- Quartz.NET
+- ASP.NET Core BackgroundService
 - Meilisearch
 - yt-dlp、ffmpeg 与 whisper.cpp
 - sherpa-onnx
@@ -85,7 +86,7 @@ Note SQL Server ──> 日程资料补全              ├──> whisper.cpp
 ```text
 HoloScoop/
 ├── Data/          # EF Core 实体、映射、查询和命令
-├── Jobs/          # Quartz 后台作业与任务状态机
+├── Jobs/          # Redis 媒体任务 Worker、周期维护服务与任务状态机
 ├── Pages/         # 任务、视频、搜索、播放和说话人页面
 ├── Search/        # Meilisearch 检索与索引重建
 ├── Services/
@@ -102,7 +103,7 @@ HoloScoop/
 1. Redis Stream Consumer 接收 `HololiveSchedule` ID，或用户在管理页面输入直播 URL 手动添加任务。
 2. 系统补全直播资料，以来源和外部视频 ID 建立或更新直播记录，并创建待选择任务。
 3. 用户选择处理模式，确认单人直播或填写 2～20 人的实际说话人数。
-4. 任务进入 `Queued` 状态，由 Quartz 作业串行领取，防止同一进程同时处理多个长音频。
+4. 任务进入 `Queued` 状态并向媒体任务 Redis Stream 发布通知；Consumer Group Worker 原子领取数据库任务并串行处理。重复通知会被任务状态检查安全忽略。
 5. `yt-dlp` 获取媒体及元数据；已有本地视频时直接复用。
 6. `ffmpeg` 提取标准 WAV，whisper.cpp 生成本地字幕。
 7. sherpa-onnx 生成说话人时间段，系统将字幕分配给匿名说话人并生成声纹信息。

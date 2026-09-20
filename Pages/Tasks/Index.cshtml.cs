@@ -16,6 +16,7 @@ public sealed class IndexModel(
     ITaskCommands taskCommands,
     INoteScheduleLookup noteScheduleLookup,
     IIncomingTaskStore incomingTaskStore,
+    IMediaTaskQueue taskQueue,
     IRedisCandidateSynchronizer redisCandidateSynchronizer,
     ISubtitleSearchService searchService,
     ILocalMediaLibrary mediaLibrary,
@@ -176,6 +177,7 @@ public sealed class IndexModel(
         task.Status = MediaTaskStatus.Queued;
         task.LastError = null;
         await dbContext.SaveChangesAsync(cancellationToken);
+        await taskQueue.PublishAsync(task.Id, cancellationToken);
         StatusMessage = "任务已重新加入队列。";
         return RedirectToPage();
     }

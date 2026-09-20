@@ -20,6 +20,7 @@ public static class RedisServiceCollectionExtensions
         });
         services.AddScoped<IIncomingTaskStore, EfIncomingTaskStore>();
         services.AddScoped<IRedisCandidateSynchronizer, RedisCandidateSynchronizer>();
+        services.AddSingleton<IMediaTaskQueue, RedisMediaTaskQueue>();
         services.AddHostedService<RedisStreamConsumer>();
         return services;
     }

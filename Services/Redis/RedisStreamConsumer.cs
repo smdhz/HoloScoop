@@ -44,11 +44,12 @@ public sealed class RedisStreamConsumer(
                         _options.ConsumerName,
                         ">",
                         _options.BatchSize,
-                        noAck: false).ConfigureAwait(false);
+                        false,
+                        TimeSpan.FromMilliseconds(_options.BlockMilliseconds),
+                        CommandFlags.None).ConfigureAwait(false);
 
                 if (entries.Length == 0)
                 {
-                    await Task.Delay(_options.PollDelayMilliseconds, stoppingToken).ConfigureAwait(false);
                     continue;
                 }
 

@@ -9,9 +9,16 @@ public sealed class RedisStreamOptions
     public string ConsumerGroup { get; set; } = "holoscoop";
     public string ConsumerName { get; set; } = Environment.MachineName;
     public string GroupStartPosition { get; set; } = "0-0";
+    public string ProcessingStreamName { get; set; } = "holoscoop:media-tasks";
+    public string ProcessingConsumerGroup { get; set; } = "holoscoop-media-workers";
     public int BatchSize { get; set; } = 10;
     public int PollDelayMilliseconds { get; set; } = 1_000;
+    public int BlockMilliseconds { get; set; } = 5_000;
     public int PendingIdleMilliseconds { get; set; } = 60_000;
+    public int ProcessingPendingIdleMilliseconds { get; set; } = 86_400_000;
+    public int ProcessingStreamMaxLength { get; set; } = 10_000;
+    public int QueueRepairIntervalMinutes { get; set; } = 5;
+    public int CandidateSyncIntervalMinutes { get; set; } = 1;
 
     public void Validate()
     {
@@ -20,8 +27,15 @@ public sealed class RedisStreamOptions
         ArgumentException.ThrowIfNullOrWhiteSpace(ConsumerGroup);
         ArgumentException.ThrowIfNullOrWhiteSpace(ConsumerName);
         ArgumentException.ThrowIfNullOrWhiteSpace(GroupStartPosition);
+        ArgumentException.ThrowIfNullOrWhiteSpace(ProcessingStreamName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(ProcessingConsumerGroup);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(BatchSize);
         ArgumentOutOfRangeException.ThrowIfNegative(PollDelayMilliseconds);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(BlockMilliseconds);
         ArgumentOutOfRangeException.ThrowIfNegative(PendingIdleMilliseconds);
+        ArgumentOutOfRangeException.ThrowIfNegative(ProcessingPendingIdleMilliseconds);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(ProcessingStreamMaxLength);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(QueueRepairIntervalMinutes);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(CandidateSyncIntervalMinutes);
     }
 }

@@ -1,6 +1,7 @@
 using HoloScoop.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
+using HoloScoop.Services.Redis;
 
 namespace HoloScoop.Data;
 
@@ -26,7 +27,9 @@ public interface ITaskCommands
 
 }
 
-public sealed class TaskCommands(HoloScoopDbContext dbContext) : ITaskCommands
+public sealed class TaskCommands(
+    HoloScoopDbContext dbContext,
+    IMediaTaskQueue taskQueue) : ITaskCommands
 {
     public async Task<QueueTaskResult> QueueAsync(
         long taskId,
@@ -81,6 +84,7 @@ public sealed class TaskCommands(HoloScoopDbContext dbContext) : ITaskCommands
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
+            await taskQueue.PublishAsync(task.Id, cancellationToken);
             return QueueTaskResult.Queued;
         }
         catch (DbUpdateConcurrencyException)

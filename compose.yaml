@@ -16,6 +16,7 @@ services:
       ConnectionStrings__DefaultConnection: "${MSSQL_CONNECTION_STRING:?Set MSSQL_CONNECTION_STRING in .env}"
       Redis__ConnectionString: "${REDIS_CONNECTION_STRING:?Set REDIS_CONNECTION_STRING in .env}"
       Redis__StreamName: "${REDIS_STREAM_NAME:-forge:calendar:add}"
+      Redis__ProcessingStreamName: "${REDIS_PROCESSING_STREAM_NAME:-holoscoop:media-tasks}"
       Meilisearch__Url: "http://meilisearch:7700"
       Meilisearch__MasterKey: "${MEILI_MASTER_KEY:?Set MEILI_MASTER_KEY in .env}"
       Media__LibraryPath: "/data/library"

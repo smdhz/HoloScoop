@@ -3,7 +3,7 @@ namespace HoloScoop.Jobs;
 /// <summary>
 /// Runs the media-specific stages after a task has atomically entered Downloading.
 /// Implementations own the Downloading -> ParsingSubtitles -> Diarizing -> Indexing -> Completed
-/// transitions. Exceptions are converted to Failed by <see cref="QueuedTasksJob"/>.
+/// transitions. Exceptions are converted to Failed by <see cref="MediaTaskWorker"/>.
 /// </summary>
 public interface IMediaTaskProcessor
 {
