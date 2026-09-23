@@ -31,25 +31,34 @@ public sealed class RedisStreamConsumer(
             }
         }
 
+        var nextPendingRecoveryAt = DateTimeOffset.MinValue;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var recovered = await RecoverStalePendingAsync(database, stoppingToken).ConfigureAwait(false);
+                StreamEntry[] recovered = [];
+                var now = DateTimeOffset.UtcNow;
+                if (now >= nextPendingRecoveryAt)
+                {
+                    nextPendingRecoveryAt = now.AddMilliseconds(
+                        _options.PendingRecoveryIntervalMilliseconds);
+                    recovered = await RecoverStalePendingAsync(database, stoppingToken).ConfigureAwait(false);
+                }
+
                 var entries = recovered.Length > 0
                     ? recovered
                     : await database.StreamReadGroupAsync(
-                        _options.StreamName,
-                        _options.ConsumerGroup,
-                        _options.ConsumerName,
-                        ">",
-                        _options.BatchSize,
-                        false,
-                        TimeSpan.FromMilliseconds(_options.BlockMilliseconds),
-                        CommandFlags.None).ConfigureAwait(false);
+                        key: _options.StreamName,
+                        groupName: _options.ConsumerGroup,
+                        consumerName: _options.ConsumerName,
+                        position: ">",
+                        count: _options.BatchSize,
+                        noAck: false,
+                        flags: CommandFlags.None).ConfigureAwait(false);
 
                 if (entries.Length == 0)
                 {
+                    await Task.Delay(_options.PollDelayMilliseconds, stoppingToken).ConfigureAwait(false);
                     continue;
                 }
 

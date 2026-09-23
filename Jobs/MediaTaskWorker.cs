@@ -34,38 +34,47 @@ public sealed class MediaTaskWorker(
             }
         }
 
+        var nextPendingRecoveryAt = DateTimeOffset.MinValue;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var recovered = await database.StreamAutoClaimAsync(
-                    _options.ProcessingStreamName,
-                    _options.ProcessingConsumerGroup,
-                    _options.ConsumerName,
-                    _options.ProcessingPendingIdleMilliseconds,
-                    "0-0",
-                    _options.BatchSize).ConfigureAwait(false);
-                if (recovered.ClaimedEntries.Length > 0)
+                var now = DateTimeOffset.UtcNow;
+                if (now >= nextPendingRecoveryAt)
                 {
-                    foreach (var entry in recovered.ClaimedEntries)
-                        await ProcessAndAcknowledgeAsync(database, entry, recoverInterrupted: true, stoppingToken)
-                            .ConfigureAwait(false);
-                    continue;
-                }
-
-                var entries = await database.StreamReadGroupAsync(
+                    nextPendingRecoveryAt = now.AddMilliseconds(
+                        _options.PendingRecoveryIntervalMilliseconds);
+                    var recovered = await database.StreamAutoClaimAsync(
                         _options.ProcessingStreamName,
                         _options.ProcessingConsumerGroup,
                         _options.ConsumerName,
-                        ">",
-                        _options.BatchSize,
-                        false,
-                        TimeSpan.FromMilliseconds(_options.BlockMilliseconds),
-                        CommandFlags.None).ConfigureAwait(false);
+                        _options.ProcessingPendingIdleMilliseconds,
+                        "0-0",
+                        _options.BatchSize).ConfigureAwait(false);
+                    if (recovered.ClaimedEntries.Length > 0)
+                    {
+                        foreach (var entry in recovered.ClaimedEntries)
+                            await ProcessAndAcknowledgeAsync(database, entry, recoverInterrupted: true, stoppingToken)
+                                .ConfigureAwait(false);
+                        continue;
+                    }
+                }
+
+                var entries = await database.StreamReadGroupAsync(
+                        key: _options.ProcessingStreamName,
+                        groupName: _options.ProcessingConsumerGroup,
+                        consumerName: _options.ConsumerName,
+                        position: ">",
+                        count: _options.BatchSize,
+                        noAck: false,
+                        flags: CommandFlags.None).ConfigureAwait(false);
 
                 foreach (var entry in entries)
                     await ProcessAndAcknowledgeAsync(database, entry, recoverInterrupted: false, stoppingToken)
                         .ConfigureAwait(false);
+
+                if (entries.Length == 0)
+                    await Task.Delay(_options.PollDelayMilliseconds, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
