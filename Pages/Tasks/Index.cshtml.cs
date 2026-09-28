@@ -45,10 +45,12 @@ public sealed class IndexModel(
 
         var now = DateTimeOffset.UtcNow;
         var selectionCutoff = now.AddHours(-1);
+        var selectionWindowStart = now.AddDays(-7);
         Candidates = await dbContext.Tasks
             .AsNoTracking()
             .Include(task => task.Stream)
             .Where(task => task.Status == MediaTaskStatus.PendingSelection
+                && (task.Stream.StartedAt ?? task.Stream.ScheduledAt) >= selectionWindowStart
                 && (task.Stream.StartedAt ?? task.Stream.ScheduledAt) <= selectionCutoff)
             .OrderBy(task => task.CreatedAt)
             .ToListAsync(cancellationToken);
