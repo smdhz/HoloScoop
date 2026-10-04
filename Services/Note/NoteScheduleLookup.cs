@@ -10,11 +10,11 @@ public interface INoteScheduleLookup
         Guid scheduleId,
         CancellationToken cancellationToken = default);
 
-    Task<IncomingStreamMessage?> FindActiveAsync(
+    Task<IncomingStreamMessage?> FindRecentAsync(
         Guid scheduleId,
         CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<NoteScheduleSearchResult>> SearchActiveByMemberAsync(
+    Task<IReadOnlyList<NoteScheduleSearchResult>> SearchRecentByMemberAsync(
         string memberName,
         int limit = 50,
         CancellationToken cancellationToken = default);
@@ -30,6 +30,8 @@ public sealed record NoteScheduleSearchResult(
 
 public sealed class NoteScheduleLookup(NoteScheduleDbContext dbContext) : INoteScheduleLookup
 {
+    private const int RecentScheduleDays = 10;
+
     public async Task<IncomingStreamMessage?> FindAsync(
         Guid scheduleId,
         CancellationToken cancellationToken = default)
@@ -41,20 +43,21 @@ public sealed class NoteScheduleLookup(NoteScheduleDbContext dbContext) : INoteS
         return row is null ? null : Map(row);
     }
 
-    public async Task<IncomingStreamMessage?> FindActiveAsync(
+    public async Task<IncomingStreamMessage?> FindRecentAsync(
         Guid scheduleId,
         CancellationToken cancellationToken = default)
     {
+        var cutoff = DateTime.UtcNow.AddDays(-RecentScheduleDays);
         var row = await dbContext.HololiveSchedule
             .AsNoTracking()
             .SingleOrDefaultAsync(
-                item => item.Id == scheduleId && !item.IsArchive,
+                item => item.Id == scheduleId && item.StartDt >= cutoff,
                 cancellationToken);
 
         return row is null ? null : Map(row);
     }
 
-    public async Task<IReadOnlyList<NoteScheduleSearchResult>> SearchActiveByMemberAsync(
+    public async Task<IReadOnlyList<NoteScheduleSearchResult>> SearchRecentByMemberAsync(
         string memberName,
         int limit = 50,
         CancellationToken cancellationToken = default)
@@ -65,9 +68,10 @@ public sealed class NoteScheduleLookup(NoteScheduleDbContext dbContext) : INoteS
 
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
 
+        var cutoff = DateTime.UtcNow.AddDays(-RecentScheduleDays);
         return await dbContext.HololiveSchedule
             .AsNoTracking()
-            .Where(item => !item.IsArchive && item.MemberName.Contains(query))
+            .Where(item => item.StartDt >= cutoff && item.MemberName.Contains(query))
             .OrderBy(item => item.StartDt)
             .Take(limit)
             .Select(item => new NoteScheduleSearchResult(

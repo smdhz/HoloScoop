@@ -38,7 +38,7 @@ public sealed class IndexModel(
         MemberQuery = member?.Trim();
         if (!string.IsNullOrWhiteSpace(MemberQuery))
         {
-            ScheduleResults = await noteScheduleLookup.SearchActiveByMemberAsync(
+            ScheduleResults = await noteScheduleLookup.SearchRecentByMemberAsync(
                 MemberQuery,
                 cancellationToken: cancellationToken);
         }
@@ -91,10 +91,10 @@ public sealed class IndexModel(
         string? member,
         CancellationToken cancellationToken)
     {
-        var message = await noteScheduleLookup.FindActiveAsync(scheduleId, cancellationToken);
+        var message = await noteScheduleLookup.FindRecentAsync(scheduleId, cancellationToken);
         if (message is null)
         {
-            StatusMessage = "该日程不存在或已经不再 active。";
+            StatusMessage = "该日程不存在或直播时间已超过 10 天。";
             return RedirectToPage(new { member });
         }
 
