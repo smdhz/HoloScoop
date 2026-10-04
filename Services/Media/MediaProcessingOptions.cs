@@ -13,7 +13,7 @@ public sealed class MediaProcessingOptions
     public TimeSpan DownloadTimeout { get; set; } = TimeSpan.FromHours(2);
     public string WhisperExecutablePath { get; set; } = "/usr/local/bin/whisper-cli";
     public string WhisperModelPath { get; set; } = "/opt/whisper/models/ggml-small.bin";
-    public string WhisperLanguage { get; set; } = "ja";
+    public string WhisperLanguage { get; set; } = "auto";
     public int WhisperMaxContext { get; set; } = 64;
     public bool WhisperUseVad { get; set; } = true;
     public string WhisperVadModelPath { get; set; } = "/opt/whisper/models/ggml-silero-v6.2.0.bin";

@@ -87,8 +87,10 @@ public sealed class MediaTaskProcessor(
         task.Status = TaskStatus.ParsingSubtitles;
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var transcriptionLanguage = NormalizeLanguage(
-            result.OriginalLanguage ?? _options.WhisperLanguage);
+        // YouTube's metadata language is frequently the channel/default upload
+        // language rather than the language actually spoken in the video. Let
+        // Whisper detect it unless the operator explicitly configures a language.
+        var transcriptionLanguage = NormalizeLanguage(_options.WhisperLanguage);
         logger.LogInformation(
             "Transcribing {ExternalId} locally with Whisper in {Language}",
             task.Stream.ExternalId,

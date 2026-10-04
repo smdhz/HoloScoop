@@ -25,6 +25,7 @@ HoloScoop 是一个面向 Hololive 直播内容的本地化采集、转写与检
 - 检测并复用媒体库中已经存在的视频，避免重复下载。
 - 使用 `ffmpeg` 将音轨转换为 16 kHz 单声道 PCM WAV。
 - 使用预构建的 whisper.cpp 和本地模型生成字幕，不调用云端语音 API。
+- 默认由 Whisper 自动检测实际口语语言；可通过 `Media__WhisperLanguage` 强制指定语言，不依赖可能失真的 YouTube 视频语言元数据。
 - 将字幕解析为带毫秒级起止时间的分段，并保存到 SQL Server。
 - 任务完成后清理转码和转写产生的临时文件。
 
